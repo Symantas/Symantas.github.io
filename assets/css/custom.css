@@ -1,47 +1,123 @@
-
-@import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Rubik+Storm&display=swap');
-
+@import url("https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Rubik+Storm&display=swap");
 
 :root {
-
-    --default-font:"Poppins",sans-serif;
-    --heading-font:"Rubik Storm",sans-serif;
-
-
+  --default-font: "Poppins", sans-serif;
+  --heading-font: "Rubik Storm", sans-serif;
 }
-
 
 .hero h2 {
-
-
-    font-size: 86px;
-    color: blueviolet;
-    letter-spacing: 3px;
+  font-size: 86px;
+  color: blueviolet;
+  letter-spacing: 3px;
 }
-
 
 .section-title h2 {
-    font-size: 64px;
-    color: brown;
-    letter-spacing: 2px;
-
-
-
-
+  font-size: 64px;
+  color: brown;
+  letter-spacing: 2px;
 }
-
 
 .about .content h2 {
-font-size: 42px;
-color:  darkslateblue;
-
-
+  font-size: 42px;
+  color: darkslateblue;
 }
 
-
 p {
+  font-size: 15px;
+  line-height: 1.8;
+  color: #444;
+}
 
-    font-size: 15px;
-    line-height: 1.8;
-    color: #444;
+.contact .php-email-form button[type="submit"] {
+  background: #444;
+  border-radius: 4px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.contact .php-email-form button[type="submit"]:hover {
+  background: blueviolet;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  transform: translateY(-2px);
+}
+
+.contact .php-email-form button[type="submit"]:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* ===== 3b. Nuorodos ===== */
+a {
+  color: darkslateblue;
+  transition: color 0.3s;
+}
+
+a:hover {
+  color: blueviolet;
+}
+
+/* Socialinių tinklų nuorodos po vardu */
+.hero .social-links a {
+  color: darkslateblue;
+  font-size: 26px;
+}
+
+.hero .social-links a:hover {
+  color: blueviolet;
+  transform: translateY(-3px);
+}
+
+/* ===== 4a. Tarpai sekcijose (Apie, Patirtis, Atlikti darbai) ===== */
+.about.section,
+.resume.section,
+.portfolio.section {
+  padding: 100px 0;
+}
+
+/* ===== 4b. Turinio blokai ===== */
+.about .content {
+  background: #faf9ff;
+  border: 1px solid #e3e0f5;
+  border-radius: 12px;
+  padding: 25px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.resume .resume-item {
+  background: #faf9ff;
+  border-radius: 0 12px 12px 0;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.portfolio .portfolio-item img {
+  border-radius: 12px;
+  border: 2px solid #e3e0f5;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* ===== 5. Komponentas 1: „Į viršų“ mygtukas ===== */
+.scroll-top {
+  background-color: darkslateblue;
+  border-radius: 12px;
+  box-shadow: 0 6px 15px rgba(72, 61, 139, 0.4);
+}
+
+.scroll-top:hover {
+  background-color: blueviolet;
+}
+
+/* ===== 5. Komponentas 2: Navigacijos meniu ===== */
+.navmenu a,
+.navmenu a:focus {
+  background-color: #ece9fb;
+  border-radius: 14px;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+}
+
+.navmenu a:hover,
+.navmenu .active,
+.navmenu .active:focus,
+.navmenu li:hover > a {
+  background-color: darkslateblue;
 }
