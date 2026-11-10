@@ -21,8 +21,9 @@ const OW={L:1.5,D:1,W:.5};   // a mistake in a lost game weighs more than one in
 const fmtD=t=>new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'});
 
 /* ================= storage ================= */
-let S={user:'',opts:{n:20,tc:'all',mode:'normal'},meta:{},games:{},cards:{},pos:{},log:{},eff:{nodes:0,pos:0,deepN:0,deepC:0,hits:0}};
+let S={user:'',opts:{n:20,tc:'all',mode:'normal'},meta:{},games:{},cards:{},pos:{},log:{},fetched:{},goal:{},seen:0,eff:{nodes:0,pos:0,deepN:0,deepC:0,hits:0}};
 try{const j=JSON.parse(localStorage.getItem(KEY));if(j)S=Object.assign(S,j)}catch(e){}
+const PREV=S.seen||0;          // when you last opened the trainer; games after this are "new"
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){
   try{S.pos={};localStorage.setItem(KEY,JSON.stringify(S))}catch(e2){}}}
 
@@ -190,9 +191,11 @@ async function getJson(url){
 }
 function progress(msg,frac,sub){$('prog').classList.remove('hide');$('pmsg').textContent=msg;$('fill').style.width=Math.round(100*frac)+'%';$('psub').textContent=sub||''}
 let busy=false,lastPaint=0;
-async function update(){
+async function update(quiet){
   if(busy)return;busy=true;$('error').classList.add('hide');$('go').disabled=true;
-  const user=S.user.toLowerCase(),{n,tc,mode}=S.opts,engines=[],raws=[];
+  const user=S.user.toLowerCase(),{tc,mode}=S.opts,engines=[],raws=[];
+  // first run: the newest N games. Every later run: any new games plus 10 older ones, so the history keeps getting deeper.
+  const have=Object.values(S.games).filter(g=>g.usr===user).length,n=have?Math.min(150,Math.max(S.opts.n,have+10)):S.opts.n;
   try{
     progress('Downloading your games…',0);
     const archives=(await getJson('https://api.chess.com/pub/player/'+encodeURIComponent(user)+'/games/archives')).archives||[];
@@ -208,7 +211,8 @@ async function update(){
     if(!seen)throw new Error('No standard chess games found for that player.');
     const mine=Object.values(S.meta).filter(m=>m.usr===user).sort((a,b)=>b.t-a.t);
     mine.slice(500).forEach(m=>delete S.meta[m.u]);save();
-    showApp();                                         // statistics are ready now; engine work continues below
+    S.fetched[user]=Date.now();save();
+    if($('tabs').classList.contains('hide'))showApp();else{derive();if(cur!=='train')render()}   // statistics are ready now; engine work continues below
     const verD=MODES[mode][1],todo=raws.filter(([g,m])=>!S.games[m.u]||S.games[m.u].d<verD);
     if(todo.length){
       progress('Starting the engine…',0);
@@ -230,7 +234,7 @@ async function update(){
     an.slice(200).forEach(g=>delete S.games[g.u]);
     const pk=Object.keys(S.pos);pk.slice(0,Math.max(0,pk.length-2500)).forEach(k=>delete S.pos[k]);
     save();$('prog').classList.add('hide');busy=false;derive();render();
-  }catch(e){$('prog').classList.add('hide');$('error').textContent=e.message||String(e);$('error').classList.remove('hide');
+  }catch(e){$('prog').classList.add('hide');if(quiet)return;$('error').textContent=e.message||String(e);$('error').classList.remove('hide');
     if(!Object.values(S.meta).some(m=>m.usr===user))$('setup').classList.remove('hide')}
   finally{engines.forEach(e=>e.quit());busy=false;$('go').disabled=false}
 }
@@ -286,15 +290,18 @@ function derive(){
   const wk={},W=t=>wk[weekStart(t)]=wk[weekStart(t)]||{t:weekStart(t),games:[],an:[],r:null};
   MG.forEach(m=>{const w=W(m.t);w.games.push(m);if(m.rated&&m.r&&m.tc===d.rtc)w.r=m.r});G.forEach(g=>W(g.t).an.push(g));
   d.weeks=Object.values(wk).sort((a,b)=>a.t-b.t);
-  // recurring-position leaks (same position, same move, repeated loss)
+  // recurring positions: a move repeated with a real cost is a leak; if your latest visit to the position was fine, it is fixed
   const seen={};
   for(const g of G){const r=replay(g),off=g.me==='w'?0:1;
-    for(let i=off;i<Math.min(24,g.sans.length);i+=2){const k=posKey(r.fens[i])+'|'+g.sans[i];(seen[k]=seen[k]||[]).push({g,ply:i})}}
-  d.leaks=[];
+    for(let i=off;i<Math.min(24,g.sans.length);i+=2){const k=posKey(r.fens[i]);(seen[k]=seen[k]||[]).push({g,ply:i,san:g.sans[i],loss:g.ls[i]})}}
+  d.leaks=[];d.fixed=[];
   for(const k in seen){const l=seen[k];if(l.length<2)continue;
-    const loss=avg(l.map(x=>x.g.ls[x.ply])),s=l[l.length-1],best=s.g.ob[s.ply];
-    if(loss<8||!best)continue;const r=replay(s.g);if(best===r.ucis[s.ply])continue;
-    d.leaks.push({occ:l,n:l.length,loss,g:s.g,ply:s.ply,san:s.g.sans[s.ply],best,bestSan:toSan(r.fens[s.ply],best),seq:movesText(s.g.sans,s.ply)})}
+    const by={};l.forEach(o=>(by[o.san]=by[o.san]||[]).push(o));
+    const bad=Object.values(by).filter(x=>x.length>=2&&avg(x.map(o=>o.loss))>=8).sort((a,b)=>b.length-a.length)[0];if(!bad)continue;
+    const last=l[l.length-1],s=bad[bad.length-1],loss=avg(bad.map(o=>o.loss)),seq=movesText(s.g.sans,s.ply);
+    if(last.san!==s.san&&last.loss<8){d.fixed.push({seq,was:s.san,now:last.san,n:bad.length,t:last.g.t});continue}
+    const best=s.g.ob[s.ply],r=replay(s.g);if(!best||best===r.ucis[s.ply])continue;
+    d.leaks.push({occ:bad,n:bad.length,loss,g:s.g,ply:s.ply,san:s.san,best,bestSan:toSan(r.fens[s.ply],best),seq})}
   d.leaks.sort((a,b)=>b.n*b.loss-a.n*a.loss);d.leaks=d.leaks.slice(0,8);
   // cards = mistakes + leaks
   const ids=new Set(M.map(m=>m.id));
@@ -444,6 +451,17 @@ function renderOver(){
       ${tile(per(M.length),'mistakes per game',nG?per(bl)+' blunders':'')}
       ${tile(d.conv[0]?Math.round(100*d.conv[1]/d.conv[0])+'%':'–','winning positions converted',d.conv[0]?d.conv[1]+' of '+d.conv[0]:'')}
       ${tile(d.conv[2]?Math.round(100*d.conv[3]/d.conv[2])+'%':'–','lost positions saved',d.conv[2]?d.conv[3]+' of '+d.conv[2]:'')}</div></div>`;
+  const nw=PREV?MG.filter(m=>m.t>PREV):[];
+  if(nw.length){
+    const nr=nw.filter(m=>m.rated&&m.r&&m.tc===d.rtc),before=MG.filter(m=>m.t<=PREV&&m.rated&&m.r&&m.tc===d.rtc).pop();
+    const rd=nr.length&&before?nr[nr.length-1].r-before.r:null,nm=M.filter(m=>m.g.t>PREV),top=tally(nm,'motif')[0];
+    const w=nw.filter(m=>m.o==='W').length,l=nw.filter(m=>m.o==='L').length,na=G.filter(g=>g.t>PREV).length;
+    const hit=top&&INS.find(x=>x.set&&x.set.length&&x.set.filter(c=>c.motif===top[0]).length>=.6*x.set.length);
+    h+=`<div class="card"><h2>Since your last visit (${fmtD(PREV)})</h2><p><b>${nw.length} new game${nw.length===1?'':'s'}</b>: ${w} won, ${nw.length-w-l} drawn, ${l} lost`+
+      (rd!=null?` · ${esc(d.rtc)} rating ${rd>=0?'+':''}${rd}`:'')+`.</p>`+
+      (na?`<p class="dim">${nm.length} mistake${nm.length===1?'':'s'} in the ${na} analysed so far`+(top?`; most common: ${esc(top[0].toLowerCase())} (${top[1]})`+(hit?`, which is in your plan as "${esc(hit.title)}"`:''):'')+`. They are in your training cards.</p>`
+         :`<p class="dim">${busy?'The engine is analysing them now.':'Not analysed yet.'}</p>`)+`</div>`;
+  }
   if(INS.length)h+=`<div class="card"><h2>Biggest lever right now</h2><h3>${esc(INS[0].title)}</h3><p class="dim">${esc(INS[0].why)}</p>
     <div class="ctl"><button class="primary" id="toCoach">See your plan</button>${dueCards().length+newCards().length?'<button id="toTrain">Train now</button>':''}</div></div>`;
   h+=`<div class="grid2"><div class="card"><h2>${esc(d.rtc||'')} rating</h2>${lineChart(r)}</div>
@@ -475,10 +493,25 @@ function renderOver(){
     <p class="dim">"Win chance at move 10" is the engine's view of the position you get out of the opening; 50% is equal.</p></div>`;
   const e=S.eff,full=e.pos*(e.deepC?e.deepN/e.deepC:0);
   h+=`<p class="dim" style="text-align:center">Engine work so far: ${e.pos} positions`+(full&&e.nodes?`, about ${(full/e.nodes).toFixed(1)}× less search than analysing every move at full depth (estimate)`:'')+`. Data stays in this browser.</p>`;
+  const standalone=window.matchMedia&&matchMedia('(display-mode: standalone)').matches||navigator.standalone,lf=S.fetched[S.user.toLowerCase()];
+  h+=`<div class="card"><h2>App and data</h2>`+(standalone?'':`<p class="dim">Use it like an app: in your browser menu choose "Add to Home Screen" (iPhone: Share button first). Training then also works offline.</p>`)+
+    `<p class="dim">Games are checked automatically when you open the trainer${lf?' · last checked '+new Date(lf).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):''}. Your progress is stored only in this browser, so keep a backup or use it to move to another device.</p>
+    <div class="ctl"><button id="exp">Download backup</button><button id="imp">Restore backup</button><input type="file" id="impFile" accept="application/json,.json" class="hide"></div><p class="dim" id="dataMsg"></p></div>`;
   el.innerHTML=h;wireCharts(el);
+  $('exp').onclick=()=>{const copy=Object.assign({},S,{pos:{}}),a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([JSON.stringify(copy)],{type:'application/json'}));a.download='mistake-trainer-backup-'+dayKey(Date.now())+'.json';
+    document.body.appendChild(a);a.click();a.remove();$('dataMsg').textContent='Backup downloaded.'};
+  $('imp').onclick=()=>$('impFile').click();
+  $('impFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();
+    rd.onload=()=>{try{const j=JSON.parse(rd.result),obj=x=>x&&typeof x==='object'&&!Array.isArray(x);
+        if(!obj(j)||typeof j.user!=='string'||!obj(j.meta)||!obj(j.games)||!obj(j.cards))throw 0;
+        if(busy)throw 1;
+        localStorage.setItem(KEY,JSON.stringify(j));location.reload();
+      }catch(x){$('dataMsg').textContent=x===1?'Wait for the analysis to finish, then restore.':'That file is not a mistake trainer backup.'}};
+    rd.readAsText(f)};
   $('ftc').value=[...$('ftc').options].some(o=>o.value===F.tc)?F.tc:'all';
   $('ftc').onchange=()=>{F.tc=$('ftc').value;derive();render()};
-  $('refresh').onclick=update;
+  $('refresh').onclick=()=>update();
   $('change').onclick=()=>{['over','coach','train','prog2','browse','tabs'].forEach(t=>$(t).classList.add('hide'));$('setup').classList.remove('hide');$('user').focus()};
   if($('toCoach'))$('toCoach').onclick=()=>show('coach');if($('toTrain'))$('toTrain').onclick=()=>show('train');
 }
@@ -496,6 +529,7 @@ function renderCoach(){
   if(D.leaks.length)h+=`<div class="card"><h2>Repeated opening leaks</h2>${D.leaks.map(l=>`<div class="leak"><b>${esc(l.seq||'First move')}</b>
     <div>You play <b style="color:var(--crit)">${esc(l.san)}</b> <span class="dim">(${l.n} games, about −${Math.round(l.loss)}% win chance each)</span> · engine prefers <b style="color:var(--good)">${esc(l.bestSan)}</b></div></div>`).join('')}
     <p class="dim">Positions you reached more than once and answered the same way. These are in your training cards.</p></div>`;
+  if(D.fixed.length)h+=`<div class="card"><h2>Leaks you fixed in real games</h2>${D.fixed.map(f=>`<div class="leak"><b>${esc(f.seq||'First move')}</b><div><span style="color:var(--good)">✓</span> You now play <b>${esc(f.now)}</b> instead of ${esc(f.was)} <span class="dim">(${f.n} times before · fixed ${fmtD(f.t)})</span></div></div>`).join('')}</div>`;
   const by={};CARDS.forEach(c=>{const s=S.cards[c.id];if(s&&s.n){const b=by[c.motif]=by[c.motif]||[0,0,0];b[0]+=s.n;b[1]+=s.ok;if(s.box>=4)b[2]++}});
   const tr=Object.entries(by).map(([k,v])=>[k,100*v[1]/v[0],Math.round(100*v[1]/v[0])+'% right · '+v[0]+' attempts']);
   const box=c=>S.cards[c.id]?S.cards[c.id].box:-1,ms=CARDS.filter(c=>box(c)>=4).length,lr=CARDS.filter(c=>box(c)>=0&&box(c)<4).length;
@@ -533,7 +567,18 @@ function renderProgress(){
     ${d.weeks.slice(-8).reverse().map(w=>`<tr><td>${fmtD(w.t)}</td><td>${w.games.length}</td><td>${w.games.length?Math.round(score(w.games))+'%':'–'}</td><td>${w.r||'–'}</td><td>${w.an.length}</td>
       <td>${w.an.length?per(w,m=>m.sev==='Blunder'):'–'}</td><td>${w.an.length?per(w,m=>HANG.includes(m.motif)):'–'}</td><td>${w.an.length?per(w,m=>/^Missed/.test(m.motif)):'–'}</td><td>${w.an.length?Math.round(accPer(w.an))+'%':'–'}</td></tr>`).join('')}</table></div>
     <p class="dim">Blunders, mistake types and accuracy come from engine-analysed games only (${G.length} so far). To see further back, analyse more.</p>
-    <div class="ctl"><button id="more" ${busy||S.opts.n>=160?'disabled':''}>Analyse ${Math.min(160,S.opts.n*2)} games instead of ${S.opts.n}</button></div></div>`;
+    <div class="ctl"><button id="more" ${busy||S.opts.n>=150?'disabled':''}>Analyse ${Math.min(150,S.opts.n*2)} games instead of ${S.opts.n}</button></div></div>`;
+  // rating goal: pace from a straight-line fit through the last 28 days of rated games
+  const goal=S.goal[d.rtc],rNow=rr.length?rr[rr.length-1].r:null,rec=rr.filter(m=>m.t>=now-28*DAY);let pace=null;
+  if(rec.length>=8){const xs=rec.map(m=>(m.t-now)/(7*DAY)),ys=rec.map(m=>m.r),mx=avg(xs),my=avg(ys),den=xs.reduce((a,x)=>a+(x-mx)**2,0);
+    if(den>0)pace=xs.reduce((a,x,i)=>a+(x-mx)*(ys[i]-my),0)/den}
+  const gap=goal&&rNow?goal-rNow:null,eta=gap>0&&pace>0.5?Math.ceil(gap/pace):null;
+  h+=`<div class="card"><h2>Rating goal (${esc(d.rtc||'no rated games')})</h2><div class="tiles">
+    ${tile(rNow||'–','current rating')}${tile(goal||'–','your goal',gap==null?'':gap<=0?'reached ✓':gap+' points to go')}
+    ${tile(pace==null?'–':(pace>=0?'+':'')+pace.toFixed(1),'points per week',pace==null?'needs 8 rated games in 4 weeks':'trend over the last 4 weeks')}
+    ${tile(eta?'~'+eta+' wk':'–','at this pace',gap>0&&pace!=null&&!eta?'not getting closer right now':'')}</div>
+    <div class="ctl"><input id="goalIn" type="number" inputmode="numeric" min="100" max="3500" placeholder="Target rating" value="${goal||''}" style="width:150px" aria-label="Target rating"><button id="goalSet">Set goal</button></div>
+    <p class="dim">The pace is a straight-line estimate and swings a lot from week to week.</p></div>`;
   // training days vs rating
   const days={};let prevR=null;
   for(const m of rr){const k=dayKey(m.t);if(!days[k])days[k]={start:prevR,end:m.r};days[k].end=m.r;prevR=m.r}
@@ -546,7 +591,8 @@ function renderProgress(){
     ${tile(trainedDays,'days trained',cards+' cards reviewed')}</div>
     <p class="dim">${tr.length>=5&&no.length>=5?'This is a correlation, not proof: you may simply train on days you feel sharp.':'This needs at least five playing days of each kind before the comparison means anything. Train on some days before you play and check back.'}</p></div>`;
   el.innerHTML=h;wireCharts(el);
-  $('more').onclick=()=>{S.opts.n=Math.min(160,S.opts.n*2);save();update()};
+  $('goalSet').onclick=()=>{const v=Math.round(+$('goalIn').value);if(v>=100&&v<=3500)S.goal[d.rtc]=v;else delete S.goal[d.rtc];save();renderProgress()};
+  $('more').onclick=()=>{S.opts.n=Math.min(150,S.opts.n*2);save();update()};
 }
 
 /* ================= board ================= */
@@ -752,7 +798,10 @@ document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.datase
 $('go').onclick=()=>{
   const u=$('user').value.trim();if(!u){$('user').focus();return}
   if(typeof Chess==='undefined'){$('error').textContent='Could not load the chess library. Check your internet connection and reload.';$('error').classList.remove('hide');return}
-  S.user=u;S.opts={n:+$('count').value,tc:$('tc').value,mode:$('mode').value};F.tc='all';save();$('setup').classList.add('hide');update();
+  S.user=u;S.opts={n:+$('count').value,tc:$('tc').value,mode:$('mode').value};F.tc='all';save();$('setup').classList.add('hide');
+  try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+  S.seen=Date.now();save();
+  update();
 };
 $('user').onkeydown=e=>{if(e.key==='Enter')$('go').click()};
 document.addEventListener('keydown',e=>{
@@ -763,4 +812,9 @@ document.addEventListener('keydown',e=>{
 
 /* ================= boot ================= */
 $('user').value=S.user||'';$('count').value=S.opts.n;$('tc').value=S.opts.tc;$('mode').value=S.opts.mode;
-if(S.user&&typeof Chess!=='undefined'&&Object.values(S.meta).some(m=>m.usr===S.user.toLowerCase())){showApp();if(dueCards().length)show('train')}
+if(S.user&&typeof Chess!=='undefined'&&Object.values(S.meta).some(m=>m.usr===S.user.toLowerCase())){
+  showApp();if(dueCards().length)show('train');
+  S.seen=Date.now();save();
+  if(Date.now()-(S.fetched[S.user.toLowerCase()]||0)>3*36e5&&navigator.onLine!==false)setTimeout(()=>update(true),800);   // check for new games quietly
+}
+if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('sw.js').catch(()=>{});
