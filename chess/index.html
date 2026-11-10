@@ -63,6 +63,7 @@ th:first-child,td:first-child{text-align:left}tr:last-child td{border-bottom:0}
 .tipbox{position:absolute;pointer-events:none;background:var(--text);color:var(--card);font-size:12px;padding:3px 7px;border-radius:6px;
 transform:translate(-50%,-130%);white-space:nowrap;display:none}
 .tip{border-left:3px solid var(--warn);padding:2px 0 2px 12px;margin-bottom:18px}.tip:last-child{margin-bottom:0}
+.why{border-left:3px solid var(--accent);padding:2px 0 2px 10px;margin:10px 0}
 .tip .n{display:inline-block;width:22px;height:22px;border-radius:50%;background:var(--warn);color:#201800;font-weight:700;font-size:13px;
 text-align:center;line-height:22px;margin-right:8px}
 .check{list-style:none;padding:0;margin:0}.check li{padding:6px 0 6px 28px;position:relative}
@@ -96,6 +97,7 @@ a{color:var(--accent)}.hide{display:none!important}
     <button data-tab="over" class="on">Overview</button>
     <button data-tab="coach">Coach</button>
     <button data-tab="train">Train<span class="badge hide" id="dueBadge"></span></button>
+    <button data-tab="prog2">Progress</button>
     <button data-tab="browse">Mistakes</button>
   </nav>
 </header>
@@ -122,6 +124,7 @@ a{color:var(--accent)}.hide{display:none!important}
 
 <section id="over" class="hide"></section>
 <section id="coach" class="hide"></section>
+<section id="prog2" class="hide"></section>
 <section id="train" class="hide">
   <div class="card">
     <div id="trainEmpty" class="hide"></div>
@@ -156,10 +159,13 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const avg=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:0;
 const today=()=>{const d=new Date();d.setHours(0,0,0,0);return d.getTime()};
+const dayKey=t=>{const d=new Date(t);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const weekStart=t=>{const d=new Date(t);d.setHours(0,0,0,0);d.setDate(d.getDate()-((d.getDay()+6)%7));return d.getTime()};
+const OW={L:1.5,D:1,W:.5};   // a mistake in a lost game weighs more than one in a game you won anyway
 const fmtD=t=>new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'});
 
 /* ================= storage ================= */
-let S={user:'',opts:{n:20,tc:'all',mode:'normal'},meta:{},games:{},cards:{},pos:{},eff:{nodes:0,pos:0,deepN:0,deepC:0,hits:0}};
+let S={user:'',opts:{n:20,tc:'all',mode:'normal'},meta:{},games:{},cards:{},pos:{},log:{},eff:{nodes:0,pos:0,deepN:0,deepC:0,hits:0}};
 try{const j=JSON.parse(localStorage.getItem(KEY));if(j)S=Object.assign(S,j)}catch(e){}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){
   try{S.pos={};localStorage.setItem(KEY,JSON.stringify(S))}catch(e2){}}}
@@ -427,7 +433,7 @@ function derive(){
         const l=g.cl[i]<0.1*g.base?1:0;lowc[l][0]++;if(mset.has(i))lowc[l][1]++;
       }
     }
-    d.acc.push({x:fmtD(g.t)+' vs '+g.m.opp,y:Math.round(avg(accs)*10)/10});
+    g._acc=avg(accs);d.acc.push({x:fmtD(g.t)+' vs '+g.m.opp,y:Math.round(g._acc*10)/10});
     if(mx>=85){hadWin++;if(g.m.o==='W')conv++}
     if(mn<=15){hadLost++;if(g.m.o!=='L')saved++}
     const ex=winPct(sign*g.ev[Math.min(20,g.ev.length-1)]),ok2=g.m.op+'|'+g.me;(d.exit[ok2]=d.exit[ok2]||[]).push(ex);
@@ -435,6 +441,9 @@ function derive(){
   }
   d.ph=ph;d.sp=sp;d.lowc=lowc;d.conv=[hadWin,conv,hadLost,saved];
   d.accAll=avg(d.acc.map(a=>a.y));
+  const wk={},W=t=>wk[weekStart(t)]=wk[weekStart(t)]||{t:weekStart(t),games:[],an:[],r:null};
+  MG.forEach(m=>{const w=W(m.t);w.games.push(m);if(m.rated&&m.r&&m.tc===d.rtc)w.r=m.r});G.forEach(g=>W(g.t).an.push(g));
+  d.weeks=Object.values(wk).sort((a,b)=>a.t-b.t);
   // recurring-position leaks (same position, same move, repeated loss)
   const seen={};
   for(const g of G){const r=replay(g),off=g.me==='w'?0:1;
@@ -462,8 +471,10 @@ const newCards=()=>CARDS.filter(m=>!S.cards[m.id]);
 /* ================= insights: every rule is driven by a statistic above ================= */
 function insights(){
   const out=[],nG=Math.max(1,G.length),n=M.length,all=score(MG),share=l=>MG.length?l.length/MG.length:0;
+  const cost=set=>.3*set.reduce((a,m)=>a+m.drop*OW[m.g.m.o],0)/nG;
   const eng=(set,min,title,why,how,check)=>{if(set.length<3||set.length/Math.max(1,n)<min)return;
-    out.push({title,why:why(set.length,Math.round(100*set.length/n)),how,check,set,impact:.3*set.reduce((a,m)=>a+m.drop,0)/nG})};
+    const lost=set.filter(m=>m.g.m.o==='L').length;
+    out.push({title,why:why(set.length,Math.round(100*set.length/n))+(lost?` ${lost} of them came in games you lost.`:''),how,check,set,impact:cost(set)})};
   eng(M.filter(m=>HANG.includes(m.motif)),.12,'Stop giving material away',(c,p)=>`${c} of your ${n} mistakes (${p}%) lose material almost immediately.`,
     'Before you let go of a piece, run a 5-second safety check: after this move, what can my opponent capture, and is the square I am moving to attacked more often than defended?','Is every piece of mine defended after this move?');
   eng(M.filter(m=>m.motif==='Missed a winning tactic'||m.motif==='Missed a forced mate'),.12,'Take the tactics you are offered',(c,p)=>`${c} mistakes (${p}%) were wins you walked past.`,
@@ -481,15 +492,15 @@ function insights(){
   // pace: mistake RATE when moving instantly vs normally
   const rate=a=>a[0]?100*a[1]/a[0]:0,rf=rate(D.sp.fast),rn=rate(D.sp.normal),rs=rate(D.sp.slow);
   if(D.sp.fast[1]>=3&&D.sp.fast[0]>=20&&rf>=1.4*Math.max(rn,.5)){const set=M.filter(m=>m.fast);
-    out.push({title:'Slow down on instant moves',set,impact:.3*set.reduce((a,m)=>a+m.drop,0)/nG,
+    out.push({title:'Slow down on instant moves',set,impact:cost(set),
       why:`When you move almost instantly you make ${rf.toFixed(1)} mistakes per 100 moves, against ${rn.toFixed(1)} at a normal pace.`,
       how:'After the opening, never play the first move you see. Sit on your hands for three seconds and ask what changed with your opponent\'s last move.',check:'What did their last move change?'})}
   const rl=rate(D.lowc[1]),rh=rate(D.lowc[0]);
   if(D.lowc[1][1]>=3&&rl>=1.4*Math.max(rh,.5)){const set=M.filter(m=>m.low);
-    out.push({title:'Fix your clock management',set,impact:.3*set.reduce((a,m)=>a+m.drop,0)/nG,
+    out.push({title:'Fix your clock management',set,impact:cost(set),
       why:`With under 10% of your time left you make ${rl.toFixed(1)} mistakes per 100 moves, against ${rh.toFixed(1)} otherwise.`,
       how:'Play known opening moves quickly and cap normal moves at about 1/20 of your starting time. Save long thinks for positions with captures and checks on the board.',check:'Check the clock every five moves.'})}
-  if(D.sp.slow[1]>=3&&D.sp.slow[0]>=10&&rs>=1.6*Math.max(rn,.5))out.push({title:'Long thinks are not paying off',set:M.filter(m=>m.slow),impact:.2*M.filter(m=>m.slow).reduce((a,m)=>a+m.drop,0)/nG,
+  if(D.sp.slow[1]>=3&&D.sp.slow[0]>=10&&rs>=1.6*Math.max(rn,.5))out.push({title:'Long thinks are not paying off',set:M.filter(m=>m.slow),impact:.7*cost(M.filter(m=>m.slow)),
     why:`After a long think you make ${rs.toFixed(1)} mistakes per 100 moves, against ${rn.toFixed(1)} at a normal pace.`,
     how:'A long think usually means you are comparing too many moves. Pick two candidates, calculate each once to the end, then choose. Do not restart the calculation.'});
   // opening leaks and openings
@@ -497,7 +508,7 @@ function insights(){
   if(lk)out.push({title:'Fix a repeated opening leak',set:CARDS.filter(c=>c.leak),impact:.3*D.leaks.reduce((a,l)=>a+l.loss*l.n,0)/nG+1,
     why:`After ${lk.seq||'the first move'} you played ${lk.san} in ${lk.n} games; it costs about ${Math.round(lk.loss)} points of win chance each time. The engine prefers ${lk.bestSan}.`+(D.leaks.length>1?` ${D.leaks.length-1} more repeated leak${D.leaks.length>2?'s':''} below.`:''),
     how:'This is the cheapest improvement you have: the same position keeps coming, so one corrected move pays off in every future game. Drill the leak cards until they are automatic.'});
-  else if(opm.length>=3&&opm.length/Math.max(1,n)>=.3)out.push({title:'Tighten your opening play',set:opm,impact:.3*opm.reduce((a,m)=>a+m.drop,0)/nG,
+  else if(opm.length>=3&&opm.length/Math.max(1,n)>=.3)out.push({title:'Tighten your opening play',set:opm,impact:cost(opm),
     why:`${opm.length} mistakes (${Math.round(100*opm.length/n)}%) happen in the first 10 moves`+(D.first.length?`; on average your first mistake comes at move ${Math.round(avg(D.first))}.`:'.'),
     how:'Develop a piece with every move, castle before move 10, and do not move the same piece twice without a reason. Then review the first 10 moves of each loss.'});
   const ops={};MG.forEach(m=>{const k=m.op+'|'+m.c;(ops[k]=ops[k]||[]).push(m)});
@@ -553,7 +564,7 @@ function lineChart(pts,unit){
   const X=i=>l+(W-l-r)*i/(pts.length-1),Y=v=>t+(H-t-b)*(1-(v-lo)/(hi-lo));
   chartData[id]={pts,X,Y,W,H,unit:unit||''};
   let g='';for(let k=0;k<3;k++){const v=lo+(hi-lo)*(k+.5)/3,y=Y(v);
-    g+=`<line x1="${l}" x2="${W-r}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${l-6}" y="${y+4}" text-anchor="end" font-size="11" fill="var(--mute)">${Math.round(v)}</text>`}
+    g+=`<line x1="${l}" x2="${W-r}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${l-6}" y="${y+4}" text-anchor="end" font-size="11" fill="var(--mute)">${hi-lo<6?v.toFixed(1):Math.round(v)}</text>`}
   const path=pts.map((p,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(p.y).toFixed(1)).join(' ');
   return `<div class="chart" id="${id}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="line chart">${g}
     <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
@@ -626,7 +637,7 @@ function renderOver(){
   $('ftc').value=[...$('ftc').options].some(o=>o.value===F.tc)?F.tc:'all';
   $('ftc').onchange=()=>{F.tc=$('ftc').value;derive();render()};
   $('refresh').onclick=update;
-  $('change').onclick=()=>{['over','coach','train','browse','tabs'].forEach(t=>$(t).classList.add('hide'));$('setup').classList.remove('hide');$('user').focus()};
+  $('change').onclick=()=>{['over','coach','train','prog2','browse','tabs'].forEach(t=>$(t).classList.add('hide'));$('setup').classList.remove('hide');$('user').focus()};
   if($('toCoach'))$('toCoach').onclick=()=>show('coach');if($('toTrain'))$('toTrain').onclick=()=>show('train');
 }
 
@@ -648,11 +659,52 @@ function renderCoach(){
   const box=c=>S.cards[c.id]?S.cards[c.id].box:-1,ms=CARDS.filter(c=>box(c)>=4).length,lr=CARDS.filter(c=>box(c)>=0&&box(c)<4).length;
   h+=`<div class="grid2">${bars('Trainer results by mistake type',tr,tr.length?'':'Train a few cards to see where you are improving.')}
     <div class="card"><h2>Training progress</h2><div class="tiles">${tile(dueCards().length,'due now')}${tile(newCards().length,'new')}${tile(lr,'learning')}${tile(ms,'mastered')}</div>
-    <p class="dim">A card is mastered after four correct reviews in a row, spaced over about two weeks. Cards from your top priorities are shown first.</p>
+    <p class="dim">A card is mastered after four correct reviews in a row, spaced over about two weeks. Cards from your top priorities, and from games you lost, are shown first.</p>
     <div class="ctl"><button class="primary" id="coachTrain">Start training</button></div></div></div>`;
   el.innerHTML=h;
   el.querySelectorAll('[data-ins]').forEach(b=>b.onclick=()=>startSession(INS[+b.dataset.ins].set,INS[+b.dataset.ins].title));
   $('coachTrain').onclick=()=>{T=null;show('train')};
+}
+
+/* ================= progress ================= */
+function renderProgress(){
+  const el=$('prog2'),d=D,now=Date.now(),wl=t=>'week of '+fmtD(t);
+  const A=l=>l.filter(x=>x.t>=now-7*DAY),B=l=>l.filter(x=>x.t<now-7*DAY&&x.t>=now-35*DAY);
+  const blPer=l=>l.length?l.reduce((a,g)=>a+g.mistakes.filter(m=>m.sev==='Blunder').length,0)/l.length:null;
+  const accPer=l=>l.length?avg(l.map(g=>g._acc)):null;
+  const cmp=(a,b,lowerBetter,unit,dec)=>a==null?'no games':b==null?'nothing to compare yet':
+    (Math.abs(a-b)<(dec?0.05:0.5)?'level with':((a<b)===lowerBetter?'▲ better than':'▼ worse than'))+' '+b.toFixed(dec)+unit+' before';
+  const rr=MG.filter(m=>m.rated&&m.r&&m.tc===d.rtc),r7=A(rr),rPrev=rr.filter(m=>m.t<now-7*DAY).pop();
+  const rDelta=r7.length&&rPrev?r7[r7.length-1].r-rPrev.r:null;
+  const ba=blPer(A(G)),bb=blPer(B(G)),aa=accPer(A(G)),ab=accPer(B(G)),sa=A(MG).length?score(A(MG)):null,sb=B(MG).length?score(B(MG)):null;
+  let h=`<div class="card"><h2>Last 7 days compared with the 4 weeks before</h2><div class="tiles">
+    ${tile(rDelta==null?'–':(rDelta>=0?'+':'')+rDelta,(d.rtc||'')+' rating change',r7.length?r7.length+' rated games':'no rated games')}
+    ${tile(sa==null?'–':Math.round(sa)+'%','score',cmp(sa,sb,false,'%',0))}
+    ${tile(ba==null?'–':ba.toFixed(1),'blunders per game',cmp(ba,bb,true,'',1))}
+    ${tile(aa==null?'–':Math.round(aa)+'%','accuracy (est.)',cmp(aa,ab,false,'%',0))}</div></div>`;
+  const wr=d.weeks.filter(w=>w.r).map(w=>({x:wl(w.t),y:w.r})),wa=d.weeks.filter(w=>w.an.length);
+  h+=`<div class="card"><h2>${esc(d.rtc||'')} rating at the end of each week</h2>${lineChart(wr)}</div>`;
+  h+=`<div class="grid2"><div class="card"><h2>Blunders per game, by week</h2>${lineChart(wa.map(w=>({x:wl(w.t),y:Math.round(blPer(w.an)*10)/10})))}</div>
+    <div class="card"><h2>Accuracy, by week</h2>${lineChart(wa.map(w=>({x:wl(w.t),y:Math.round(accPer(w.an))})),'%')}</div></div>`;
+  const per=(w,f)=>(w.an.reduce((a,g)=>a+g.mistakes.filter(f).length,0)/w.an.length).toFixed(1);
+  h+=`<div class="card"><h2>Week by week</h2><div class="scroll"><table><tr><th>Week of</th><th>Games</th><th>Score</th><th>Rating</th><th>Analysed</th><th>Blunders / game</th><th>Hung pieces / game</th><th>Missed tactics / game</th><th>Accuracy</th></tr>
+    ${d.weeks.slice(-8).reverse().map(w=>`<tr><td>${fmtD(w.t)}</td><td>${w.games.length}</td><td>${w.games.length?Math.round(score(w.games))+'%':'–'}</td><td>${w.r||'–'}</td><td>${w.an.length}</td>
+      <td>${w.an.length?per(w,m=>m.sev==='Blunder'):'–'}</td><td>${w.an.length?per(w,m=>HANG.includes(m.motif)):'–'}</td><td>${w.an.length?per(w,m=>/^Missed/.test(m.motif)):'–'}</td><td>${w.an.length?Math.round(accPer(w.an))+'%':'–'}</td></tr>`).join('')}</table></div>
+    <p class="dim">Blunders, mistake types and accuracy come from engine-analysed games only (${G.length} so far). To see further back, analyse more.</p>
+    <div class="ctl"><button id="more" ${busy||S.opts.n>=160?'disabled':''}>Analyse ${Math.min(160,S.opts.n*2)} games instead of ${S.opts.n}</button></div></div>`;
+  // training days vs rating
+  const days={};let prevR=null;
+  for(const m of rr){const k=dayKey(m.t);if(!days[k])days[k]={start:prevR,end:m.r};days[k].end=m.r;prevR=m.r}
+  const dl=Object.entries(days).filter(([k,v])=>v.start!=null).map(([k,v])=>[S.log[k]>0,v.end-v.start]);
+  const tr=dl.filter(x=>x[0]).map(x=>x[1]),no=dl.filter(x=>!x[0]).map(x=>x[1]),sg=v=>(v>=0?'+':'')+v.toFixed(1);
+  const trainedDays=Object.keys(S.log).length,cards=Object.values(S.log).reduce((a,b)=>a+b,0);
+  h+=`<div class="card"><h2>Does training move your rating?</h2><div class="tiles">
+    ${tile(tr.length?sg(avg(tr)):'–','avg rating change on days you trained',tr.length+' playing days')}
+    ${tile(no.length?sg(avg(no)):'–','avg rating change on other days',no.length+' playing days')}
+    ${tile(trainedDays,'days trained',cards+' cards reviewed')}</div>
+    <p class="dim">${tr.length>=5&&no.length>=5?'This is a correlation, not proof: you may simply train on days you feel sharp.':'This needs at least five playing days of each kind before the comparison means anything. Train on some days before you play and check back.'}</p></div>`;
+  el.innerHTML=h;wireCharts(el);
+  $('more').onclick=()=>{S.opts.n=Math.min(160,S.opts.n*2);save();update()};
 }
 
 /* ================= board ================= */
@@ -670,8 +722,8 @@ $('board').onclick=e=>{const s=e.target.closest('.s');if(s)onSquare(s.dataset.sq
 let T=null,trainEngine=null;
 function buildQueue(){
   const due=dueCards().sort((a,b)=>S.cards[a.id].due-S.cards[b.id].due);
-  const fresh=newCards().sort((a,b)=>b.pri-a.pri||b.drop-a.drop).slice(0,NEW_PER_SESSION);
-  return due.concat(fresh).slice(0,MAX_SESSION);
+  const wd=c=>c.drop*OW[c.g.m.o],fresh=newCards().sort((a,b)=>b.pri-a.pri||wd(b)-wd(a)).slice(0,NEW_PER_SESSION);
+  return due.concat(fresh);            // everything that is due, plus a few new cards
 }
 function startSession(set,label){
   let q;
@@ -719,6 +771,7 @@ function paint(){
     h+=T.verdict+`<p><span class="pill">${m.sev}</span><span class="pill">${esc(m.motif)}</span><span class="pill">${m.phase}</span>${m.fast?'<span class="pill">played instantly</span>':''}${m.low?'<span class="pill">low on time</span>':''}</p>
       <p>In the game you played <b style="color:var(--crit)">${esc(m.san)}</b> — win chance ${Math.round(m.wb)}% → ${m.wa}%.`+(m.reply?` The punishment was <b>${esc(m.reply)}</b>.`:'')+
       `<br>Best was <b style="color:var(--good)">${esc(m.bestSan)}</b>`+(m.line&&m.line!==m.bestSan?` <span class="dim">(${esc(m.line)})</span>`:'')+`.</p>
+      <div class="why"><p><b>Why:</b> ${esc(explain(m,T.fens[m.ply]))}</p><p><b>Rule:</b> ${esc(ruleOf(m))}</p></div>
       <div class="ctl"><button id="prev" ${T.ply<=0?'disabled':''} aria-label="Previous move">◀</button><button id="here">Position</button>
         <button id="fwd" ${T.ply>=T.fens.length-1?'disabled':''} aria-label="Next move">▶</button>
         <a href="${esc(g.u)}" target="_blank" rel="noopener" style="align-self:center">open game</a></div>
@@ -731,6 +784,49 @@ function paint(){
   on('retry',()=>{T.tryFen=null;T.verdict='';T.sel=null;T.targets=[];paint()});
   on('next',()=>nextCard(1));on('prev',()=>{T.ply--;paint()});on('fwd',()=>{T.ply++;paint()});on('here',()=>{T.ply=m.ply;paint()});
   on('backList',()=>{T=null;show('browse')});
+}
+function attackedBy(fen,sq,color){       // can `color` capture on sq in this position?
+  const f=fen.split(' ');f[1]=color;f[3]='-';
+  try{return new Chess(f.join(' ')).moves({verbose:true}).some(x=>x.to===sq&&x.captured)}catch(e){return false}
+}
+function explain(m,fen){                  // plain-language reason for the best move, built from the engine line by rules
+  const ch=new Chess(fen),me=m.g.me,opp=me==='w'?'b':'w',mv=ch.move(uciMove(m.best));if(!mv)return '';
+  const name=PIECE[mv.piece].toLowerCase(),parts=[];let swing=0;
+  {const c2=new Chess(fen),s0=material(c2,me);for(const x of (m.line||'').split(' ').filter(Boolean)){if(!c2.move(x,{sloppy:true}))break}swing=material(c2,me)-s0}
+  if(ch.in_checkmate())parts.push('It is checkmate.');
+  else if(m.motif==='Missed a forced mate')parts.push('It starts a forced checkmate: every reply loses to another check.');
+  else if(mv.captured){
+    const victim=PIECE[mv.captured].toLowerCase(),def=attackedBy(ch.fen(),mv.to,opp);
+    parts.push(`It takes the ${victim} on ${mv.to}`+(!def?', which was not defended':VAL[mv.captured]>VAL[mv.piece]?`, which is worth more than your ${name}`:swing>=2?' and you come out ahead in the exchange':'')+'.');
+    if(ch.in_check())parts.push('It also gives check.');
+  }else if(/[kq]/.test(mv.flags))parts.push('It castles: your king gets safe and your rook joins the game.');
+  else if(mv.promotion)parts.push('It promotes the pawn.');
+  else{
+    const was=attackedBy(fen,mv.from,opp),now=attackedBy(ch.fen(),mv.to,opp);
+    if(was&&!now&&mv.piece!=='p'&&mv.piece!=='k')parts.push(`Your ${name} on ${mv.from} was under attack; this moves it to a safe square.`);
+    else if(ch.in_check())parts.push('It gives check and forces your opponent to react.');
+    else if(swing>=2)parts.push(`It sets up a win of material${m.line?' ('+m.line+')':''}.`);
+    else if(m.ply<20&&/[nb]/.test(mv.piece)&&/[18]/.test(mv.from[1]))parts.push(`It develops your ${name} to an active square.`);
+    else parts.push(mv.piece==='p'?'A solid pawn move that leaves nothing loose.':mv.piece==='k'?'It puts your king on a safer, more useful square.':`It improves your ${name} without leaving anything loose.`);
+  }
+  if(HANG.includes(m.motif)&&m.reply)parts.push(`Your move ${m.san} allowed ${m.reply}; this one does not.`);
+  else if(m.motif==='Walked into mate')parts.push(`Your move ${m.san} let your opponent start a mating attack.`);
+  else if(m.leak)parts.push(`You have played ${m.san} here ${m.leak} times.`);
+  return parts.join(' ');
+}
+function ruleOf(m){
+  let r;
+  if(m.leak)r='Fix a repeated opening move once and it pays off in every future game.';
+  else if(m.motif==='Missed a forced mate')r='When the enemy king is exposed, look at every check before anything else.';
+  else if(m.motif==='Walked into mate')r='Before every move, ask what your opponent\'s checks are.';
+  else if(m.motif==='Missed a winning tactic')r='Checks, captures, threats: look at yours first on every move.';
+  else if(HANG.includes(m.motif))r='Before you let go of a piece, check what your opponent can capture afterwards.';
+  else if(m.winning)r='When you are ahead, simplify and remove counterplay first.';
+  else if(m.phase==='Opening')r='In the opening: develop a new piece each move, castle early, do not move the same piece twice.';
+  else if(m.phase==='Endgame')r='In the endgame: activate your king and push your passed pawns.';
+  else r='No tactic on the board? Find your worst-placed piece and improve it.';
+  if(m.fast)r+=' You played this move instantly: take three seconds first.';else if(m.low)r+=' You were low on time here: keep a reserve for moments like this.';
+  return r;
 }
 function hintText(m){
   if(m.leak)return 'A natural developing move. Think about what your usual move allows.';
@@ -771,7 +867,7 @@ function grade(ok){
   T.first++;if(ok)T.right++;
   const c=S.cards[m.id]||(S.cards[m.id]={box:0,n:0,ok:0});c.n++;
   if(ok){c.ok++;c.box=T.hints?Math.max(1,c.box):Math.min(6,c.box+1)}else c.box=1;
-  c.due=today()+INTERVALS[c.box]*DAY;save();
+  c.due=today()+INTERVALS[c.box]*DAY;const k=dayKey(Date.now());S.log[k]=(S.log[k]||0)+1;save();
   if(!ok){T.retry=T.retry||{};if(!T.retry[m.id]){T.retry[m.id]=1;T.q.push(m)}}
 }
 function finish(kind,san){
@@ -802,9 +898,9 @@ $('browseFilter').onchange=renderBrowse;
 
 /* ================= navigation ================= */
 let cur='over';
-function render(){if(cur==='over')renderOver();else if(cur==='coach')renderCoach();else if(cur==='browse')renderBrowse();badge()}
+function render(){if(cur==='over')renderOver();else if(cur==='coach')renderCoach();else if(cur==='prog2')renderProgress();else if(cur==='browse')renderBrowse();badge()}
 function show(tab,keep){
-  cur=tab;['over','coach','train','browse'].forEach(t=>$(t).classList.toggle('hide',t!==tab));
+  cur=tab;['over','coach','train','prog2','browse'].forEach(t=>$(t).classList.toggle('hide',t!==tab));
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   if(tab==='train'){if(!keep&&(!T||T.review)){derive();startSession()}}else{derive();render()}
   window.scrollTo(0,0);
@@ -825,5 +921,5 @@ document.addEventListener('keydown',e=>{
 
 /* ================= boot ================= */
 $('user').value=S.user||'';$('count').value=S.opts.n;$('tc').value=S.opts.tc;$('mode').value=S.opts.mode;
-if(S.user&&typeof Chess!=='undefined'&&Object.values(S.meta).some(m=>m.usr===S.user.toLowerCase()))showApp();
+if(S.user&&typeof Chess!=='undefined'&&Object.values(S.meta).some(m=>m.usr===S.user.toLowerCase())){showApp();if(dueCards().length)show('train')}
 </script></body></html>
