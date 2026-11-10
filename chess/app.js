@@ -45,7 +45,19 @@ function replay(g){            // analysed game -> {fens, ucis}
 }
 const uciMove=u=>({from:u.slice(0,2),to:u.slice(2,4),promotion:u[4]});
 const winPct=cp=>{cp=Math.max(-1000,Math.min(1000,cp));return 50+50*(2/(1+Math.exp(-0.00368208*cp))-1)};
-const accOf=loss=>Math.max(0,Math.min(100,103.1668*Math.exp(-0.04354*loss)-3.1669));
+// Accuracy follows Lichess's published method (lila, AccuracyPercent): each move is scored from the win chance it gave up,
+// then the game value is the mean of a volatility-weighted average and a harmonic mean, so blunders in sharp positions count most.
+const moveAcc=loss=>loss<=0?100:Math.max(0,Math.min(100,103.1668100711649*Math.exp(-0.04354415386753951*loss)-3.166924740191411+1));
+function gameAccuracy(g,lossOf){
+  const n=g.sans.length,wp=g.ev.slice(0,n+1).map(winPct),off=g.me==='w'?0:1;if(wp.length<3)return null;
+  const ws=Math.max(2,Math.min(8,Math.floor(n/10))),wins=[],sd=x=>{const m=avg(x);return Math.sqrt(avg(x.map(v=>(v-m)**2)))};
+  for(let k=0;k<Math.min(ws,wp.length)-2;k++)wins.push(wp.slice(0,ws));
+  for(let i=0;i+ws<=wp.length;i++)wins.push(wp.slice(i,i+ws));
+  let sw=0,swa=0,cnt=0,inv=0;
+  for(let i=off;i<n;i+=2){const a=moveAcc(lossOf?lossOf(i):g.ls[i]),w=Math.max(.5,Math.min(12,wins[i]?sd(wins[i]):.5));
+    sw+=w;swa+=w*a;cnt++;inv+=1/Math.max(1,a)}
+  return cnt?(swa/sw+cnt/inv)/2:null;
+}
 const posKey=fen=>fen.split(' ').slice(0,4).join(' ');
 function material(ch,color){let t=0;for(const row of ch.board())for(const p of row)if(p)t+=(p.color===color?1:-1)*VAL[p.type];return t}
 function lineSwing(fen,ucis,color,minPlies=3,maxPlies=10){
@@ -150,8 +162,9 @@ async function analyseGame(engine,raw,meta,mode,tick){
   for(let i=0;i<n;i++){
     if(eg>n&&isEndgame(fens[i]))eg=i;
     if(!mine(i))continue;
-    const played=P[i],wb=winPct(sign*E[i].cp),wa=cand.includes(i)?(played?winPct(sign*played.cp):wb):winPct(sign*E[i+1].cp),drop=wb-wa;
-    ls[i]=Math.max(0,Math.round(drop));
+    const played=P[i],wb=winPct(sign*E[i].cp),top=E[i].pv[0]===ucis[i];   // playing the engine's first choice loses nothing; any difference is search noise
+    const wa=top?wb:cand.includes(i)?(played?winPct(sign*played.cp):wb):winPct(sign*E[i+1].cp),drop=wb-wa;
+    ls[i]=Math.max(0,Math.round(drop*10)/10);
     if(!played||drop<MISTAKE)continue;
     const before=E[i],fen=fens[i];
     const mb=before.mate?sign*before.mate:0,ma=played.mate?sign*played.mate:0;
@@ -170,7 +183,7 @@ async function analyseGame(engine,raw,meta,mode,tick){
       low:!!(base&&cl[i]!=null&&cl[i]<0.1*base),fast:sp!=null&&i>=16&&sp<=fastLim,slow:sp!=null&&sp>=slowLim});
   }
   const ob=[];for(let i=0;i<Math.min(24,n);i++)ob.push(mine(i)&&E[i].pv[0]||'');
-  return {u:meta.u,usr:meta.usr,t:meta.t,m:meta,me,sans,ev:E.map(x=>Math.max(-10000,Math.min(10000,x.cp))),ls,cl,base,inc,eg,ob,mistakes,d:verD};
+  return {u:meta.u,usr:meta.usr,t:meta.t,m:meta,me,sans,ev:E.map(x=>Math.max(-10000,Math.min(10000,x.cp))),ls,cl,base,inc,eg,ob,mistakes,d:verD,v:2};
 }
 
 /* ================= download + run ================= */
@@ -195,7 +208,8 @@ async function update(quiet){
   if(busy)return;busy=true;$('error').classList.add('hide');$('go').disabled=true;
   const user=S.user.toLowerCase(),{tc,mode}=S.opts,engines=[],raws=[];
   // first run: the newest N games. Every later run: any new games plus 10 older ones, so the history keeps getting deeper.
-  const have=Object.values(S.games).filter(g=>g.usr===user).length,n=have?Math.min(150,Math.max(S.opts.n,have+10)):S.opts.n;
+  const mineG=Object.values(S.games).filter(g=>g.usr===user),have=mineG.length,stale=mineG.some(g=>g.v!==2);
+  const n=!have?S.opts.n:stale?Math.max(S.opts.n,have):Math.min(150,Math.max(S.opts.n,have+10));
   try{
     progress('Downloading your games…',0);
     const archives=(await getJson('https://api.chess.com/pub/player/'+encodeURIComponent(user)+'/games/archives')).archives||[];
@@ -213,7 +227,7 @@ async function update(quiet){
     mine.slice(500).forEach(m=>delete S.meta[m.u]);save();
     S.fetched[user]=Date.now();save();
     if($('tabs').classList.contains('hide'))showApp();else{derive();if(cur!=='train')render()}   // statistics are ready now; engine work continues below
-    const verD=MODES[mode][1],todo=raws.filter(([g,m])=>!S.games[m.u]||S.games[m.u].d<verD);
+    const verD=MODES[mode][1],todo=raws.filter(([g,m])=>!S.games[m.u]||S.games[m.u].d<verD||S.games[m.u].v!==2);   // v2 = cleaner per-move losses; older analyses are redone once
     if(todo.length){
       progress('Starting the engine…',0);
       const k=Math.max(1,Math.min(4,(navigator.hardwareConcurrency||2)-1,todo.length));
@@ -270,7 +284,7 @@ function derive(){
     const sign=g.me==='w'?1:-1,off=g.me==='w'?0:1,accs=[];let mx=0,mn=100;const mset=new Set(g.mistakes.map(m=>m.ply));
     const fastLim=Math.max(1.5,0.008*g.base),slowLim=0.08*g.base;
     for(let i=off;i<g.sans.length;i+=2){
-      const a=accOf(g.ls[i]),p=i<20?'Opening':i>=g.eg?'Endgame':'Middlegame';accs.push(a);
+      const a=moveAcc(g.ls[i]),p=i<20?'Opening':i>=g.eg?'Endgame':'Middlegame';accs.push(a);
       ph[p][0]++;ph[p][1]+=g.ls[i];ph[p][2]+=a;
       const w=winPct(sign*g.ev[i]);if(i>=10){mx=Math.max(mx,w);mn=Math.min(mn,w)}
       if(g.base&&g.cl[i]!=null){
@@ -279,7 +293,7 @@ function derive(){
         const l=g.cl[i]<0.1*g.base?1:0;lowc[l][0]++;if(mset.has(i))lowc[l][1]++;
       }
     }
-    g._acc=avg(accs);d.acc.push({x:fmtD(g.t)+' vs '+g.m.opp,y:Math.round(g._acc*10)/10});
+    g._acc=gameAccuracy(g)??avg(accs);d.acc.push({x:fmtD(g.t)+' vs '+g.m.opp,y:Math.round(g._acc*10)/10});
     if(mx>=85){hadWin++;if(g.m.o==='W')conv++}
     if(mn<=15){hadLost++;if(g.m.o!=='L')saved++}
     const ex=winPct(sign*g.ev[Math.min(20,g.ev.length-1)]),ok2=g.m.op+'|'+g.me;(d.exit[ok2]=d.exit[ok2]||[]).push(ex);
@@ -349,7 +363,7 @@ function insights(){
     out.push({title:'Fix your clock management',set,impact:cost(set),
       why:`With under 10% of your time left you make ${rl.toFixed(1)} mistakes per 100 moves, against ${rh.toFixed(1)} otherwise.`,
       how:'Play known opening moves quickly and cap normal moves at about 1/20 of your starting time. Save long thinks for positions with captures and checks on the board.',check:'Check the clock every five moves.'})}
-  if(D.sp.slow[1]>=3&&D.sp.slow[0]>=10&&rs>=1.6*Math.max(rn,.5))out.push({title:'Long thinks are not paying off',set:M.filter(m=>m.slow),impact:.7*cost(M.filter(m=>m.slow)),
+  if(D.sp.slow[1]>=3&&D.sp.slow[0]>=20&&rs>=1.6*Math.max(rn,.5))out.push({title:'Long thinks are not paying off',set:M.filter(m=>m.slow),impact:.7*cost(M.filter(m=>m.slow)),
     why:`After a long think you make ${rs.toFixed(1)} mistakes per 100 moves, against ${rn.toFixed(1)} at a normal pace.`,
     how:'A long think usually means you are comparing too many moves. Pick two candidates, calculate each once to the end, then choose. Do not restart the calculation.'});
   // opening leaks and openings
@@ -386,6 +400,14 @@ function insights(){
   if(L.length>=8&&flag.length/L.length>=.25)out.push({title:'You lose too many games on time',impact:100*flag.length/Math.max(1,MG.length)*.5,
     why:`${flag.length} of your ${L.length} losses (${Math.round(100*flag.length/L.length)}%) were on the clock.`,
     how:'Aim to reach move 20 with at least half your time. If you regularly cannot, play a slower time control for a while or simplify your openings.',check:'Half my time left at move 20?'});
+  const res=L.filter(m=>m.e==='resigned'),resLen=avg(res.filter(m=>m.n).map(m=>m.n/2)),ra=G.filter(g=>g.m.o==='L'&&g.m.e==='resigned');
+  const endWin=ra.map(g=>winPct((g.me==='w'?1:-1)*g.ev[g.ev.length-1])),alive=endWin.filter(w=>w>=10).length;
+  if(L.length>=6&&res.length/L.length>=.5&&(resLen<=25||alive>=2)){const sv=D.conv[2]?D.conv[3]/D.conv[2]:0;
+    out.push({title:'Stop resigning early',impact:100*res.length/Math.max(1,MG.length)*Math.max(.3,sv),check:'Losing? Play on and make them prove it.',
+      why:`${res.length} of your ${L.length} losses were resignations, after ${Math.round(resLen)} moves on average.`+
+        (alive?` In ${alive} of the ${ra.length} analysed, the engine still gave you a 10% or better chance when you resigned.`:'')+
+        (D.conv[2]?` When you did play on from a clearly lost position, you saved ${D.conv[3]} of ${D.conv[2]}.`:''),
+      how:'At your level opponents hand the advantage back all the time. Do not resign before move 30 unless mate is unavoidable: set small traps, trade nothing, and make them prove the win.'})}
   if(L.length>=8&&quick.length/L.length>=.25)out.push({title:'Survive the first 20 moves',impact:100*quick.length/Math.max(1,MG.length)*.4,
     why:`${quick.length} of your ${L.length} losses (${Math.round(100*quick.length/L.length)}%) were over within 20 moves.`,
     how:'Early collapses are almost always king safety or a loose piece. Castle early and do not grab pawns while your pieces are still at home.'});
@@ -445,9 +467,9 @@ function renderOver(){
       <div><b>${esc(S.user)}</b> <span class="dim">· ${MG.length} games${MG.length?' · '+fmtD(MG[0].t)+' – '+fmtD(MG[MG.length-1].t):''}</span></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select id="ftc" aria-label="Time control filter"><option value="all">All time controls</option>${tcs.map(([k,c])=>`<option value="${esc(k)}">${esc(k[0].toUpperCase()+k.slice(1))} (${c})</option>`).join('')}</select>
       <button id="refresh" ${busy?'disabled':''}>Get new games</button><button class="link" id="change">change player</button></div></div>
-    <div class="tiles">${tile(MG.length?Math.round(score(MG))+'%':'–','score',`${wins.length}–${MG.length-wins.length-losses.length}–${losses.length}`)}
-      ${tile(rNow||'–',(d.rtc||'')+' rating',r.length>1?(rD>=0?'+':'')+rD+' over '+r.length+' games':'')}
-      ${tile(nG?Math.round(d.accAll)+'%':'–','accuracy (est.)',nG?nG+' analysed games':'engine still working')}
+    <div class="tiles">${tile(MG.length?Math.round(score(MG))+'%':'–',F.tc==='all'&&tcs.length>1?'score, all time controls':'score',`${wins.length}–${MG.length-wins.length-losses.length}–${losses.length}`)}
+      ${tile(rNow||'–',(d.rtc||'')+' rating',r.length>1?(rD>=0?'+':'')+rD+' over '+r.length+' rated '+esc(d.rtc)+' games':'')}
+      ${tile(nG?Math.round(d.accAll)+'%':'–','accuracy',nG?'Lichess method · '+nG+' games':'engine still working')}
       ${tile(per(M.length),'mistakes per game',nG?per(bl)+' blunders':'')}
       ${tile(d.conv[0]?Math.round(100*d.conv[1]/d.conv[0])+'%':'–','winning positions converted',d.conv[0]?d.conv[1]+' of '+d.conv[0]:'')}
       ${tile(d.conv[2]?Math.round(100*d.conv[3]/d.conv[2])+'%':'–','lost positions saved',d.conv[2]?d.conv[3]+' of '+d.conv[2]:'')}</div></div>`;
@@ -465,7 +487,7 @@ function renderOver(){
   if(INS.length)h+=`<div class="card"><h2>Biggest lever right now</h2><h3>${esc(INS[0].title)}</h3><p class="dim">${esc(INS[0].why)}</p>
     <div class="ctl"><button class="primary" id="toCoach">See your plan</button>${dueCards().length+newCards().length?'<button id="toTrain">Train now</button>':''}</div></div>`;
   h+=`<div class="grid2"><div class="card"><h2>${esc(d.rtc||'')} rating</h2>${lineChart(r)}</div>
-    <div class="card"><h2>Accuracy per analysed game</h2>${lineChart(d.acc,'%')}<p class="dim">Estimated from the engine's win-chance loss on each of your moves.</p></div></div>`;
+    <div class="card"><h2>Accuracy per analysed game</h2>${lineChart(d.acc,'%')}<p class="dim">Lichess's accuracy method on this page's own engine evaluations. Chess.com uses a different, unpublished formula, so its number will differ.</p></div></div>`;
   h+=`<div class="grid2"><div class="card"><h2>Results</h2>${WDLKEY}${wdlRow('All games',MG)}${wdlRow('As White',MG.filter(m=>m.c==='w'))}${wdlRow('As Black',MG.filter(m=>m.c==='b'))}
       ${d.vs.map(([l,x])=>wdlRow(l,x)).join('')}</div>
     <div class="card"><h2>When you play</h2>${WDLKEY}${d.hours.map(([l,x])=>wdlRow(l,x)).join('')}${wdlRow('Right after a win',d.afterW)}${wdlRow('Right after a loss',d.afterL)}
@@ -476,7 +498,7 @@ function renderOver(){
   // engine sections
   const phRows=k=>Object.entries(d.ph).filter(([p,v])=>v[0]).map(([p,v])=>k==='acc'?[p,v[2]/v[0],Math.round(v[2]/v[0])+'%']:
     [p,100*M.filter(m=>m.phase===p).length/v[0],(100*M.filter(m=>m.phase===p).length/v[0]).toFixed(1)]);
-  const rate=(a,l)=>a[0]?[l,100*a[1]/a[0],(100*a[1]/a[0]).toFixed(1)+' ('+a[0]+' moves)']:null;
+  const rate=(a,l)=>!a[0]?null:a[0]<20?[l,0,'too few moves to say ('+a[0]+')']:[l,100*a[1]/a[0],(100*a[1]/a[0]).toFixed(1)+' ('+a[0]+' moves)'];
   if(nG){
     h+=`<div class="grid2">${bars('Accuracy by phase',phRows('acc'))}${bars('Mistakes per 100 moves, by phase',phRows('rate'),d.first.length?'Your first mistake comes at move '+Math.round(avg(d.first))+' on average.':'')}</div>`;
     h+=`<div class="grid2">${bars('Mistakes per 100 moves, by pace',[rate(d.sp.fast,'Played instantly'),rate(d.sp.normal,'Normal pace'),rate(d.sp.slow,'After a long think')].filter(Boolean),'Moves after move 8, by time spent.')}
@@ -557,7 +579,7 @@ function renderProgress(){
     ${tile(rDelta==null?'–':(rDelta>=0?'+':'')+rDelta,(d.rtc||'')+' rating change',r7.length?r7.length+' rated games':'no rated games')}
     ${tile(sa==null?'–':Math.round(sa)+'%','score',cmp(sa,sb,false,'%',0))}
     ${tile(ba==null?'–':ba.toFixed(1),'blunders per game',cmp(ba,bb,true,'',1))}
-    ${tile(aa==null?'–':Math.round(aa)+'%','accuracy (est.)',cmp(aa,ab,false,'%',0))}</div></div>`;
+    ${tile(aa==null?'–':Math.round(aa)+'%','accuracy',cmp(aa,ab,false,'%',0))}</div></div>`;
   const wr=d.weeks.filter(w=>w.r).map(w=>({x:wl(w.t),y:w.r})),wa=d.weeks.filter(w=>w.an.length);
   h+=`<div class="card"><h2>${esc(d.rtc||'')} rating at the end of each week</h2>${lineChart(wr)}</div>`;
   h+=`<div class="grid2"><div class="card"><h2>Blunders per game, by week</h2>${lineChart(wa.map(w=>({x:wl(w.t),y:Math.round(blPer(w.an)*10)/10})))}</div>
