@@ -653,18 +653,82 @@ function renderProgress(){
 }
 
 /* ================= board ================= */
-function drawBoard(fen,flip,marks,playable){
+function drawBoard(fen,flip,marks,playable,arrows){
   const rows=fen.split(' ')[0].split('/'),cells=[];
   for(let r=0;r<8;r++){let f=0;for(const ch of rows[r]){if(ch>='1'&&ch<='8')for(let i=0;i<+ch;i++)cells.push([r,f++,null]);else cells.push([r,f++,ch])}}
   if(flip)cells.reverse();
   const el=$('board');el.classList.toggle('play',!!playable);
   el.innerHTML=cells.map(([r,f,p])=>{const sq='abcdefgh'[f]+(8-r),side=p?(p===p.toUpperCase()?'w':'b'):'';
     return `<div class="s ${(r+f)%2?'d':'l'} ${side} ${marks[sq]||''}" data-sq="${sq}">${p?'<span>'+GLYPH[p.toLowerCase()]+'︎</span>':''}</div>`}).join('');
+  // arrows: red = what happened, green = what was better
+  const xy=q=>{const f='abcdefgh'.indexOf(q[0]),r=8-+q[1];return flip?[7.5-f,7.5-r]:[f+.5,r+.5]};
+  $('arrows').innerHTML=(arrows||[]).filter(a=>a[0]).map(([u,cls])=>{const [x1,y1]=xy(u.slice(0,2)),[x2,y2]=xy(u.slice(2,4)),L=Math.hypot(x2-x1,y2-y1)||1,
+      ux=(x2-x1)/L,uy=(y2-y1)/L,hx=x2-ux*.34,hy=y2-uy*.34,c=cls==='good'?'var(--good)':'var(--crit)';
+    return `<g opacity=".85"><line x1="${x1+ux*.3}" y1="${y1+uy*.3}" x2="${hx}" y2="${hy}" stroke="${c}" stroke-width=".17" stroke-linecap="round"/>
+      <polygon points="${x2},${y2} ${hx-uy*.2},${hy+ux*.2} ${hx+uy*.2},${hy-ux*.2}" fill="${c}"/></g>`}).join('');
 }
-$('board').onclick=e=>{const s=e.target.closest('.s');if(s)onSquare(s.dataset.sq)};
+const calm=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+function slide(uci,rev){               // glide the piece that just moved from its old square to its new one
+  if(calm||!uci)return;const b=$('board'),one=(a,z)=>{const src=b.querySelector(`[data-sq="${a}"]`),dst=b.querySelector(`[data-sq="${z}"]`),pc=dst&&dst.querySelector('span');
+    if(!pc||!src)return;const r1=src.getBoundingClientRect(),r2=dst.getBoundingClientRect();
+    pc.style.transition='none';pc.style.transform=`translate(${r1.left-r2.left}px,${r1.top-r2.top}px)`;dst.style.zIndex=4;
+    pc.getBoundingClientRect();pc.style.transition='transform .24s cubic-bezier(.2,.7,.3,1)';pc.style.transform=''};
+  const f=uci.slice(0,2),t=uci.slice(2,4);rev?one(t,f):one(f,t);
+  const k=b.querySelector(`[data-sq="${rev?f:t}"] span`);
+  if(k&&k.textContent.startsWith(GLYPH.k)&&Math.abs(f.charCodeAt(0)-t.charCodeAt(0))===2){            // castling: bring the rook along
+    const rk=t[0]==='g'?['h'+t[1],'f'+t[1]]:['a'+t[1],'d'+t[1]];rev?one(rk[1],rk[0]):one(rk[0],rk[1])}
+}
+// tap a piece then a square, or drag the piece
+let drag=null;
+{const b=$('board'),end=()=>{if(drag&&drag.el){drag.el.style.transition='transform .15s';drag.el.style.transform='';drag.el.style.pointerEvents=''}drag=null};
+  b.addEventListener('pointerdown',e=>{
+    const sqEl=e.target.closest('.s');if(!sqEl||!T||T.state!=='ask'||T.tryFen)return;const sq=sqEl.dataset.sq;
+    if(T.sel&&T.targets.includes(sq)){attempt(T.sel,sq);return}
+    const ch=new Chess(T.A.fen),p=ch.get(sq);
+    if(p&&p.color===T.A.side){T.sel=sq;T.targets=ch.moves({square:sq,verbose:true}).map(x=>x.to);paint();
+      const el=b.querySelector(`[data-sq="${sq}"] span`);drag={sq,el,x:e.clientX,y:e.clientY,moved:false};try{b.setPointerCapture(e.pointerId)}catch(x){}}
+    else{T.sel=null;T.targets=[];paint()}
+  });
+  b.addEventListener('pointermove',e=>{if(!drag||!drag.el)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
+    if(!drag.moved&&Math.hypot(dx,dy)<6)return;
+    if(!drag.moved){drag.moved=true;drag.el.style.pointerEvents='none';drag.el.style.transition='none';drag.el.parentNode.style.zIndex=6}
+    drag.el.style.transform=`translate(${dx}px,${dy}px) scale(1.2)`});
+  b.addEventListener('pointerup',e=>{if(!drag)return;const d=drag;
+    if(!d.moved){drag=null;return}
+    const hit=document.elementFromPoint(e.clientX,e.clientY),sqEl=hit&&hit.closest('.s');
+    if(sqEl&&T&&T.targets.includes(sqEl.dataset.sq)){drag=null;attempt(d.sq,sqEl.dataset.sq,true)}else end()});
+  b.addEventListener('pointercancel',end);
+}
 
 /* ================= trainer (spaced repetition) ================= */
-let T=null,trainEngine=null;
+let T=null,trainEngine=null,demoSeq=0;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const effectOf=(ch,mv)=>ch.in_checkmate()?'checkmate':mv.captured?'wins the '+PIECE[mv.captured].toLowerCase():ch.in_check()?'check':'';
+function stopDemo(){demoSeq++;if(T)T.demo=null}
+async function runDemo(which){           // play the explanation out on the board: first what happened, then what was better
+  if(!T||T.state!=='done')return;
+  const id=++demoSeq,m=T.m,stale=()=>id!==demoSeq||!T||T.m!==m||T.state!=='done',seqs=[];
+  if(m.syn==='pun')seqs.push({start:T.fens[m.ply-1],cls:'bad',moves:[T.ucis[m.ply-1],m.best],text:(i,san,eff)=>i?`…and ${san} ${eff||'punishes it'}.`:`You played ${san}.`});
+  else if(m.syn==='fol')seqs.push({start:T.fens[m.ply],cls:'good',moves:m.pre.split(' ').concat(m.bestSan),text:(i,san,eff)=>i===0?`The idea starts with ${san}.`:i===1?`After ${san}…`:`…then ${san}${eff?' '+eff:' completes it'}.`});
+  else{
+    if(which!=='best'){const mv=[T.ucis[m.ply]];if(m.reply)mv.push(m.reply);
+      seqs.push({start:T.fens[m.ply],cls:'bad',moves:mv,text:(i,san,eff)=>!i?`You played ${san}.`:/^Missed/.test(m.motif)?`…and after ${san} the chance is gone.`:`…and ${san} ${eff||(m.motif==='Positional slip'||m.leak?'leaves you worse':'punishes it')}.`})}
+    if(which!=='bad')seqs.push({start:T.fens[m.ply],cls:'good',moves:(m.line||m.bestSan).split(' ').filter(Boolean),
+      text:(i,san,eff)=>i===0?`Better was ${san}${eff?' — '+eff:''}.`:i===1?`If ${san}…`:`…then ${san}${eff?' '+eff:''}.`});
+  }
+  for(const q of seqs){
+    const ch=new Chess(q.start);T.demo={fen:q.start,arrows:[],marks:{},caption:q.cls==='bad'?'What happened':'What was better'};paint();
+    await sleep(700);if(stale())return;
+    for(let i=0;i<q.moves.length;i++){
+      const x=q.moves[i],mv=/^[a-h][1-8][a-h][1-8]/.test(x)?ch.move(uciMove(x)):ch.move(x,{sloppy:true});if(!mv)break;
+      const uci=mv.from+mv.to+(mv.promotion||'');
+      T.demo={fen:ch.fen(),arrows:[[uci,q.cls]],marks:{[mv.from]:q.cls,[mv.to]:q.cls},caption:q.text(i,mv.san,effectOf(ch,mv))};T.anim={uci};paint();
+      await sleep(1500);if(stale())return;
+    }
+    await sleep(500);if(stale())return;
+  }
+  T.demo=null;paint();
+}
 function buildQueue(){
   const due=dueCards().sort((a,b)=>S.cards[a.id].due-S.cards[b.id].due);
   const wd=c=>c.drop*OW[c.g.m.o],fresh=newCards().sort((a,b)=>b.pri-a.pri||wd(b)-wd(a)).slice(0,NEW_PER_SESSION);
@@ -684,7 +748,8 @@ function nextCard(step){
     const k=c.n%3,noCastle=fen.split(' ')[2]==='-';
     if(k===1)vr=noCastle?{mir:true}:{flip:true};else if(k===2)vr={flip:true}}
   if(vr){fen=tfFen(fen,vr);best=tfUci(best,vr);if(vr.flip)side=side==='w'?'b':'w'}
-  Object.assign(T,{m,A:{fen,best,side,vr},fens:r.fens,ucis:r.ucis,ply:m.ply,state:'ask',firstTry:!T.retry||!T.retry[m.id],hints:0,sel:null,targets:[],tryFen:null,verdict:'',checking:false});
+  stopDemo();
+  Object.assign(T,{m,demo:null,anim:null,A:{fen,best,side,vr},fens:r.fens,ucis:r.ucis,ply:m.ply,state:'ask',firstTry:!T.retry||!T.retry[m.id],hints:0,sel:null,targets:[],tryFen:null,verdict:'',checking:false});
   $('trainEmpty').classList.add('hide');$('trainer').classList.remove('hide');paint();
 }
 function endSession(){
@@ -700,20 +765,23 @@ function endSession(){
 function paint(){
   const m=T.m,g=m.g,A=T.A,marks={},base=m.fen||T.fens[m.ply],mySide=m.side||g.me,ask=T.state==='ask';
   const mark=(u,c)=>{if(u){marks[u.slice(0,2)]=c;marks[u.slice(2,4)]=c}};
-  let fen,flip,play=false;
+  let fen,flip,play=false,arrows=[];
   if(ask){
     flip=A.side==='b';
     if(T.tryFen){fen=T.tryFen;mark(T.tryUci,'last')}
     else{fen=A.fen;play=true;
-      if(!A.vr&&!m.fen&&m.ply>0)mark(T.ucis[m.ply-1],m.syn==='pun'?'bad':'last');
+      if(!A.vr&&!m.fen&&m.ply>0){mark(T.ucis[m.ply-1],m.syn==='pun'?'bad':'last');if(m.syn==='pun')arrows.push([T.ucis[m.ply-1],'bad'])}
       if(T.hints>=2)marks[A.best.slice(0,2)]='hint';
       if(T.sel){marks[T.sel]='sel';T.targets.forEach(t=>marks[t]=(marks[t]||'')+' dot')}}
   }else{
     flip=mySide==='b';
-    if(m.syn){fen=base;mark(m.best,'good')}
-    else{fen=T.fens[T.ply];if(T.ply===m.ply){mark(T.ucis[m.ply],'bad');mark(m.best,'good')}else if(T.ply>0)mark(T.ucis[T.ply-1],'last')}
+    if(T.demo){fen=T.demo.fen;Object.assign(marks,T.demo.marks);arrows=T.demo.arrows}
+    else if(m.syn){fen=base;arrows=[[m.best,'good']]}
+    else{fen=T.fens[T.ply];if(T.ply===m.ply)arrows=[[T.ucis[m.ply],'bad'],[m.best,'good']];else if(T.ply>0)mark(T.ucis[T.ply-1],'last')}
   }
-  drawBoard(fen,flip,marks,play);
+  drawBoard(fen,flip,marks,play,arrows);
+  if(T.anim){slide(T.anim.uci,T.anim.rev);T.anim=null}
+  $('cap').textContent=!ask&&T.demo?T.demo.caption:!ask&&!m.syn&&T.ply===m.ply?'Red: what you played · Green: the best move':'';
   const moveNo=Math.floor((m.syn==='pun'?m.ply-1:m.ply)/2)+1,side=(ask?A.side:mySide)==='w'?'White':'Black';
   const head=m.syn==='pun'?`You are your opponent here (${side}). Punish the mistake.`:m.syn==='fol'?`You are ${side}. Finish the tactic.`:`You are ${side}. Find the best move.`;
   let h=`<div class="dim">${T.review?'Review':'Card '+(T.i+1)+' of '+T.q.length}${T.label?' · '+esc(T.label):''}</div>
@@ -731,13 +799,14 @@ function paint(){
       (T.hints<2&&!T.tryFen?`<button id="hint">${T.hints?'Another hint':'Hint'}</button>`:'')+`<button id="giveup">Show answer</button></div>`;
   }else{
     const G_='style="color:var(--good)"',B_='style="color:var(--crit)"';
-    h+=T.verdict+`<p><span class="pill">${m.sev}</span><span class="pill">${esc(m.motif)}</span><span class="pill">${m.phase}</span>${m.fast?'<span class="pill">played instantly</span>':''}${m.low?'<span class="pill">low on time</span>':''}</p>`;
+    h+=T.verdict+`<p style="display:flex;flex-wrap:wrap;gap:4px 0"><span class="pill">${m.sev}</span><span class="pill">${esc(m.motif)}</span><span class="pill">${m.phase}</span>${m.fast?'<span class="pill">played instantly</span>':''}${m.low?'<span class="pill">low on time</span>':''}</p>`;
     if(m.syn==='pun')h+=`<p>The punishment is <b ${G_}>${esc(m.bestSan)}</b>. Your move <b ${B_}>${esc(m.san)}</b> is what allowed it.</p>`;
     else if(m.syn==='fol')h+=`<p>After ${esc(m.pre)}, <b ${G_}>${esc(m.bestSan)}</b> completes the idea. In the game you played <b ${B_}>${esc(m.san)}</b> instead of starting it.</p>`;
     else h+=`<p>In the game you played <b ${B_}>${esc(m.san)}</b> — win chance ${Math.round(m.wb)}% → ${m.wa}%.`+(m.reply?` The punishment was <b>${esc(m.reply)}</b>.`:'')+
       `<br>Best was <b ${G_}>${esc(m.bestSan)}</b>`+(m.line&&m.line!==m.bestSan?` <span class="dim">(${esc(m.line)})</span>`:'')+`.</p>`;
     if(A&&A.vr)h+=`<p class="dim">You solved a variant. The board now shows the original position from your game.</p>`;
-    h+=`<div class="why"><p><b>Why:</b> ${esc(explain(m,base))}</p><p><b>Rule:</b> ${esc(ruleOf(m))}</p></div><div class="ctl">`+
+    h+=`<div class="ctl">`+(m.syn?`<button id="demoAll">▶ Show it on the board</button>`:`<button id="demoBad">▶ Show what went wrong</button><button id="demoBest">▶ Show the best line</button>`)+`</div>
+      <div class="why"><p><b>Why:</b> ${esc(explain(m,base))}</p><p><b>Rule:</b> ${esc(ruleOf(m))}</p></div><div class="ctl">`+
       (m.syn?'':`<button id="prev" ${T.ply<=0?'disabled':''} aria-label="Previous move">◀</button><button id="here">Position</button>
         <button id="fwd" ${T.ply>=T.fens.length-1?'disabled':''} aria-label="Next move">▶</button>`)+
       `<a href="${esc(g.u)}" target="_blank" rel="noopener noreferrer" style="align-self:center">open game</a></div>
@@ -747,8 +816,10 @@ function paint(){
   $('side').innerHTML=h;
   const on=(id,fn)=>{const b=$(id);if(b)b.onclick=fn};
   on('hint',()=>{T.hints++;paint()});on('giveup',()=>finish('giveup'));
-  on('retry',()=>{T.tryFen=null;T.verdict='';T.sel=null;T.targets=[];paint()});
-  on('next',()=>nextCard(1));on('prev',()=>{T.ply--;paint()});on('fwd',()=>{T.ply++;paint()});on('here',()=>{T.ply=m.ply;paint()});
+  on('retry',()=>{T.anim={uci:T.tryUci,rev:true};T.tryFen=null;T.verdict='';T.sel=null;T.targets=[];paint()});
+  on('next',()=>nextCard(1));
+  on('prev',()=>{stopDemo();T.anim={uci:T.ucis[T.ply-1],rev:true};T.ply--;paint()});on('fwd',()=>{stopDemo();T.ply++;T.anim={uci:T.ucis[T.ply-1]};paint()});on('here',()=>{stopDemo();T.ply=m.ply;paint()});
+  on('demoBad',()=>{T.ply=m.ply;runDemo('bad')});on('demoBest',()=>{T.ply=m.ply;runDemo('best')});on('demoAll',()=>runDemo('all'));
   on('backList',()=>{T=null;show('browse')});
 }
 function attackedBy(fen,sq,color){       // can `color` capture on sq in this position?
@@ -815,12 +886,12 @@ function onSquare(sq){
   if(p&&p.color===T.A.side){T.sel=sq;T.targets=ch.moves({square:sq,verbose:true}).map(x=>x.to)}else{T.sel=null;T.targets=[]}
   paint();
 }
-async function attempt(from,to){
+async function attempt(from,to,dropped){
   const m=T.m,A=T.A,ch=new Chess(A.fen),p=ch.get(from);
   let promo='';if(p.type==='p'&&/[18]/.test(to[1]))promo=(A.best.slice(0,4)===from+to&&A.best[4])||'q';
   const uci=from+to+promo,mv=ch.move(uciMove(uci));if(!mv)return;
-  T.sel=null;T.targets=[];T.tryFen=ch.fen();T.tryUci=uci;
-  if(uci===A.best)return finish('best');
+  T.sel=null;T.targets=[];T.tryFen=ch.fen();T.tryUci=uci;if(!dropped)T.anim={uci};
+  if(uci===A.best){paint();await sleep(dropped?250:420);if(!T||T.m!==m)return;return finish('best')}
   T.checking=true;T.verdict='<p class="dim">Checking your move…</p>';paint();
   let loss=null;const card=m;
   try{if(!trainEngine)trainEngine=await Engine.create();
@@ -845,7 +916,7 @@ function finish(kind,san){
   if(T.firstTry)grade(kind!=='giveup');
   T.verdict=kind==='best'?'<div class="verdict" style="color:var(--good)">✓ Correct — the best move.</div>'
     :kind==='good'?`<div class="verdict" style="color:var(--good)">✓ Good — ${esc(san)} works too.</div>`:'<div class="verdict">Here is the answer.</div>';
-  T.state='done';T.tryFen=null;T.ply=T.m.ply;paint();badge();
+  T.state='done';T.tryFen=null;T.ply=T.m.ply;paint();badge();runDemo('all');
 }
 function badge(){const due=dueCards().length,b=$('dueBadge');b.textContent=due;b.classList.toggle('hide',!due)}
 
@@ -862,7 +933,7 @@ function renderBrowse(){
     ||`<p class="dim">${busy?'The engine is still working. Mistakes appear here as each game is finished.':'Nothing here.'}</p>`;
   document.querySelectorAll('.item').forEach(el=>el.onclick=()=>{
     const m=CARDS.find(x=>x.id===el.dataset.id),r=replay(m.g);
-    T={q:[m],i:0,review:true,label:'',m,A:{fen:m.fen||r.fens[m.ply],best:m.best,side:m.side||m.g.me,vr:null},fens:r.fens,ucis:r.ucis,ply:m.ply,state:'done',verdict:'',hints:0,firstTry:false};
+    stopDemo();T={q:[m],i:0,review:true,label:'',m,demo:null,anim:null,A:{fen:m.fen||r.fens[m.ply],best:m.best,side:m.side||m.g.me,vr:null},fens:r.fens,ucis:r.ucis,ply:m.ply,state:'done',verdict:'',hints:0,firstTry:false};
     show('train',true);$('trainEmpty').classList.add('hide');$('trainer').classList.remove('hide');paint()});
 }
 $('browseFilter').onchange=renderBrowse;
@@ -890,7 +961,7 @@ $('user').onkeydown=e=>{if(e.key==='Enter')$('go').click()};
 document.addEventListener('keydown',e=>{
   if(!T||T.state!=='done'||cur!=='train')return;
   if(T.m.syn){if(e.key==='Enter'&&!T.review)nextCard(1);return}
-  if(e.key==='ArrowLeft'&&T.ply>0){T.ply--;paint()}else if(e.key==='ArrowRight'&&T.ply<T.fens.length-1){T.ply++;paint()}
+  if(e.key==='ArrowLeft'&&T.ply>0){stopDemo();T.anim={uci:T.ucis[T.ply-1],rev:true};T.ply--;paint()}else if(e.key==='ArrowRight'&&T.ply<T.fens.length-1){stopDemo();T.ply++;T.anim={uci:T.ucis[T.ply-1]};paint()}
   else if(e.key==='Enter'&&!T.review)nextCard(1);
 });
 

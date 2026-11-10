@@ -19,10 +19,11 @@
 <style>
 :root{color-scheme:light;--bg:#f3f2ee;--card:#fcfcfb;--line:#e1e0d9;--text:#0b0b0b;--dim:#52514e;--mute:#898781;
 --accent:#2a78d6;--onaccent:#fff;--good:#0ca30c;--crit:#d03b3b;--warn:#fab219;--neutral:#b9b7ae;--field:#fff;--hover:#eceae4;
---sq:min(11.4vw,58px)}
+--sq:min(calc((100vw - 60px)/8),58px)}
 @media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#111110;--card:#1a1a19;--line:#2c2c2a;--text:#f0efec;--dim:#c3c2b7;
 --mute:#898781;--accent:#3987e5;--onaccent:#06121f;--neutral:#5a5953;--field:#111110;--hover:#262624}}
 *{box-sizing:border-box}
+html,body{overflow-x:hidden}
 body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 main{max-width:1000px;margin:0 auto;padding:12px 12px 80px}
 header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-bottom:12px}
@@ -86,7 +87,9 @@ user-select:none;-webkit-user-select:none;touch-action:manipulation;width:max-co
 .s.good::after{background:rgba(40,190,110,.6)}.s.sel::after{background:rgba(57,135,229,.55)}
 .s.hint::after{box-shadow:inset 0 0 0 4px var(--warn)}
 .s.dot::before{content:"";position:absolute;width:28%;height:28%;border-radius:50%;background:rgba(20,30,40,.4);z-index:2}
-.s>span{position:relative;z-index:1}.play .s{cursor:pointer}
+.s>span{position:relative;z-index:1;will-change:transform}.play .s{cursor:pointer}.board.play{touch-action:none}
+.bwrap{position:relative;width:max-content;margin:0 auto}#arrows{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.cap{min-height:26px;margin-top:8px;text-align:center;font-weight:600;max-width:calc(var(--sq)*8);margin-left:auto;margin-right:auto}
 .side{min-height:190px}
 .ctl{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .verdict{font-weight:600;font-size:16px;margin:10px 0 4px}
@@ -134,7 +137,7 @@ a{color:var(--accent)}.hide{display:none!important}
 <section id="train" class="hide">
   <div class="card">
     <div id="trainEmpty" class="hide"></div>
-    <div class="trainer" id="trainer"><div><div class="board" id="board"></div></div><div class="side" id="side"></div></div>
+    <div class="trainer" id="trainer"><div><div class="bwrap"><div class="board" id="board"></div><svg id="arrows" viewBox="0 0 8 8" aria-hidden="true"></svg></div><div class="cap" id="cap" aria-live="polite"></div></div><div class="side" id="side"></div></div>
   </div>
 </section>
 <section id="browse" class="hide">
