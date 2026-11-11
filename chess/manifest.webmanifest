@@ -1,0 +1,14 @@
+{
+  "name": "Mistake trainer",
+  "short_name": "Mistakes",
+  "description": "Learn from your own Chess.com games: statistics, a coaching plan and spaced-repetition training.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111110",
+  "theme_color": "#1a1a19",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}
