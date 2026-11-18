@@ -608,3 +608,359 @@ ul.custom-list > li::before {
     font-weight: 600;
     color: darkslateblue;
 }
+
+.pazanga.section {
+    background: #f6f4fe;
+}
+
+.pazanga h3,
+.pazanga h4,
+.pazanga h5 {
+    font-family: var(--default-font);
+}
+
+.kp-profilis {
+    height: 100%;
+    background: #fff;
+    border: 1px solid #e3e0f5;
+    border-radius: 16px;
+    padding: 28px 24px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.kp-ikonele {
+    display: block;
+    width: 150px;
+    height: auto;
+    margin: 0 auto 14px;
+    filter: drop-shadow(0 6px 12px rgba(72, 61, 139, 0.25));
+}
+
+.kp-lygio-pokytis {
+    animation: kp-ikoneles-suolis 0.6s ease;
+}
+
+@keyframes kp-ikoneles-suolis {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.15) rotate(-4deg); }
+    70%  { transform: scale(0.95) rotate(3deg); }
+    100% { transform: scale(1); }
+}
+
+.kp-lygis {
+    display: inline-block;
+    background: darkslateblue;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 4px 14px;
+    border-radius: 20px;
+}
+
+.kp-rangas {
+    margin: 10px 0 4px;
+    font-size: 26px;
+    font-weight: 700;
+    color: darkslateblue;
+}
+
+.kp-xp {
+    margin-bottom: 14px;
+    font-size: 20px;
+    font-weight: 600;
+    color: blueviolet;
+}
+
+.kp-xp small {
+    font-size: 13px;
+    font-weight: 400;
+    color: #888;
+}
+
+.kp-progreso-juosta {
+    height: 14px;
+    background: #ece9fb;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.kp-progreso-uzpildas {
+    width: 0;
+    height: 100%;
+    background: linear-gradient(90deg, darkslateblue, blueviolet);
+    border-radius: 10px;
+    transition: width 0.6s ease;
+}
+
+.kp-progreso-tekstas {
+    margin: 8px 0 0;
+    font-size: 13px;
+    color: #666;
+}
+
+.kp-statistika {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+}
+
+.kp-stat {
+    background: #fff;
+    border: 1px solid #e3e0f5;
+    border-radius: 14px;
+    padding: 16px 10px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.kp-stat-skaicius {
+    display: block;
+    font-size: 30px;
+    font-weight: 700;
+    color: darkslateblue;
+    line-height: 1.2;
+}
+
+.kp-stat small {
+    font-size: 13px;
+    color: #777;
+}
+
+.kp-poantraste {
+    margin: 26px 0 12px;
+    font-size: 18px;
+    font-weight: 600;
+    color: darkslateblue;
+}
+
+.kp-pasiekimai {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+}
+
+.kp-pasiekimas {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    background: #f1f0f4;
+    border: 2px dashed #c9c6d6;
+    border-radius: 14px;
+    opacity: 0.6;
+    filter: grayscale(1);
+    transition: all 0.4s ease;
+}
+
+.kp-pasiekimas strong {
+    display: block;
+    font-size: 14px;
+    color: #333;
+}
+
+.kp-pasiekimas small {
+    display: block;
+    font-size: 12px;
+    color: #777;
+}
+
+.kp-pasiekimo-ikona {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #ddd;
+    color: #777;
+    font-size: 20px;
+}
+
+.kp-pasiekimo-busena {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #999;
+}
+
+.kp-pasiekimas.atrakinta {
+    background: #fffaf0;
+    border: 2px solid #f0b429;
+    opacity: 1;
+    filter: none;
+    box-shadow: 0 6px 16px rgba(240, 180, 41, 0.25);
+}
+
+.kp-pasiekimas.atrakinta .kp-pasiekimo-ikona {
+    background: linear-gradient(135deg, #f7c948, #e8890c);
+    color: #fff;
+}
+
+.kp-pasiekimas.atrakinta .kp-pasiekimo-busena {
+    color: #c77d00;
+}
+
+.kp-lenta {
+    margin-top: 30px;
+}
+
+.kp-stulpelis {
+    height: 100%;
+    background: #fff;
+    border: 1px solid #e3e0f5;
+    border-top: 4px solid #9a96b0;
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.kp-stulpelis[data-busena="Mokomasi"] { border-top-color: blueviolet; }
+.kp-stulpelis[data-busena="Atlikta"]  { border-top-color: #198754; }
+
+.kp-stulpelio-antraste {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.kp-stulpelio-antraste h4 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+    color: darkslateblue;
+}
+
+.kp-kiekis {
+    min-width: 28px;
+    padding: 2px 8px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: darkslateblue;
+    background: #ece9fb;
+    border-radius: 12px;
+}
+
+.kp-korteles {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 60px;
+}
+
+.kp-tuscia {
+    margin: 0;
+    padding: 16px;
+    text-align: center;
+    font-size: 13px;
+    color: #aaa;
+    border: 2px dashed #e3e0f5;
+    border-radius: 10px;
+}
+
+.kp-kortele {
+    background: #faf9ff;
+    border: 1px solid #e3e0f5;
+    border-left: 4px solid #9a96b0;
+    border-radius: 10px;
+    padding: 12px 14px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.kp-kortele:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(72, 61, 139, 0.15);
+}
+
+.kp-kortele[data-busena="Mokomasi"] { border-left-color: blueviolet; }
+.kp-kortele[data-busena="Atlikta"]  { border-left-color: #198754; }
+
+.kp-kortele-virsus {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.kp-kortele h5 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+}
+
+.kp-kortele-xp {
+    flex-shrink: 0;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    background: darkslateblue;
+    border-radius: 12px;
+}
+
+.kp-kortele[data-busena="Atlikta"] .kp-kortele-xp {
+    background: #198754;
+}
+
+.kp-busenos-pasirinkimas {
+    width: 100%;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: #444;
+    background: #fff;
+    border: 1px solid #d6d2ee;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.kp-busenos-pasirinkimas:focus {
+    outline: none;
+    border-color: blueviolet;
+    box-shadow: 0 0 0 3px rgba(138, 43, 226, 0.15);
+}
+
+.kp-perkelta {
+    animation: kp-korteles-atsiradimas 0.7s ease;
+}
+
+@keyframes kp-korteles-atsiradimas {
+    0%   { transform: scale(0.9); opacity: 0; box-shadow: 0 0 0 0 rgba(138, 43, 226, 0.5); }
+    60%  { transform: scale(1.03); opacity: 1; box-shadow: 0 0 0 8px rgba(138, 43, 226, 0); }
+    100% { transform: scale(1); }
+}
+
+.kp-atstatyti {
+    margin-top: 26px;
+    padding: 8px 22px;
+    font-size: 14px;
+    color: darkslateblue;
+    background: transparent;
+    border: 2px solid darkslateblue;
+    border-radius: 20px;
+    transition: 0.3s;
+}
+
+.kp-atstatyti:hover {
+    color: #fff;
+    background: darkslateblue;
+}
+
+@media (max-width: 768px) {
+    .kp-pasiekimai {
+        grid-template-columns: 1fr;
+    }
+
+    .kp-stat-skaicius {
+        font-size: 24px;
+    }
+}

@@ -47,6 +47,7 @@
       <ul>
         <li><a href="#hero" class="active"><i class="bi bi-house navicon"></i><span>Pagrindinis</span></a></li>
         <li><a href="#about"><i class="bi bi-person navicon"></i><span>Apie</span></a></li>
+        <li><a href="#pazanga"><i class="bi bi-trophy navicon"></i><span>Pažanga</span></a></li>
         <li><a href="#resume"><i class="bi bi-file-earmark-text navicon"></i><span>Patirtis</span></a></li>
         <li><a href="#portfolio"><i class="bi bi-images navicon"></i><span>Projektai</span></a></li>
         <li><a href="#services"><i class="bi bi-hdd-stack navicon"></i><span>Paslaugos</span></a></li>
@@ -195,6 +196,93 @@
       </div>
 
     </section><!-- /Skills Section -->
+
+    <section id="pazanga" class="pazanga section">
+
+      <div class="container section-title" data-aos="fade-up">
+        <h2>Pažanga</h2>
+        <p>Įgūdžių progreso lenta: keisk įgūdžių būsenas ir rink patirties taškus (XP)</p>
+      </div>
+
+      <div class="container" data-aos="fade-up" data-aos-delay="100">
+
+        <div class="row gy-4">
+
+          <div class="col-lg-5">
+            <div class="kp-profilis">
+              <img id="kp-ikonele" class="kp-ikonele" src="assets/img/avatar-lygis-1.svg" alt="Vartotojo ikonėlė">
+              <span id="kp-lygis" class="kp-lygis">1 lygis</span>
+              <h3 id="kp-rangas" class="kp-rangas">Pradedantysis</h3>
+              <p class="kp-xp"><span id="kp-xp">0</span> XP <small id="kp-xp-is-viso"></small></p>
+
+              <div class="kp-progreso-juosta" role="progressbar" aria-label="Progresas iki sekančio lygio" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="kp-progreso-uzpildas" class="kp-progreso-uzpildas"></div>
+              </div>
+              <p id="kp-progreso-tekstas" class="kp-progreso-tekstas"></p>
+            </div>
+          </div>
+
+          <div class="col-lg-7">
+            <div class="kp-statistika">
+              <div class="kp-stat">
+                <span id="kp-stat-viso" class="kp-stat-skaicius">0</span>
+                <small>Iš viso įgūdžių</small>
+              </div>
+              <div class="kp-stat">
+                <span id="kp-stat-atlikta" class="kp-stat-skaicius">0</span>
+                <small>Atlikta</small>
+              </div>
+              <div class="kp-stat">
+                <span id="kp-stat-procentas" class="kp-stat-skaicius">0%</span>
+                <small>Atlikta procentais</small>
+              </div>
+            </div>
+
+            <h4 class="kp-poantraste">Pasiekimai</h4>
+            <div id="kp-pasiekimai" class="kp-pasiekimai"></div>
+          </div>
+
+        </div>
+
+        <div class="row gy-4 kp-lenta">
+          <div class="col-lg-4">
+            <div class="kp-stulpelis" data-busena="Planuojama">
+              <div class="kp-stulpelio-antraste">
+                <h4><i class="bi bi-lightbulb"></i> Planuojama</h4>
+                <span class="kp-kiekis">0</span>
+              </div>
+              <div class="kp-korteles"></div>
+            </div>
+          </div>
+          <div class="col-lg-4">
+            <div class="kp-stulpelis" data-busena="Mokomasi">
+              <div class="kp-stulpelio-antraste">
+                <h4><i class="bi bi-book"></i> Mokomasi</h4>
+                <span class="kp-kiekis">0</span>
+              </div>
+              <div class="kp-korteles"></div>
+            </div>
+          </div>
+          <div class="col-lg-4">
+            <div class="kp-stulpelis" data-busena="Atlikta">
+              <div class="kp-stulpelio-antraste">
+                <h4><i class="bi bi-check2-circle"></i> Atlikta</h4>
+                <span class="kp-kiekis">0</span>
+              </div>
+              <div class="kp-korteles"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-center">
+          <button type="button" id="kp-atstatyti" class="kp-atstatyti">
+            <i class="bi bi-arrow-counterclockwise"></i> Atstatyti pradinę būseną
+          </button>
+        </div>
+
+      </div>
+
+    </section>
 
     <!-- Resume Section -->
     <section id="resume" class="resume section">
@@ -635,6 +723,8 @@
   <script src="assets/js/main.js"></script>
 
   <script src="assets/js/custom.js"></script>
+
+  <script src="assets/js/pazanga.js"></script>
 
 </body>
 
