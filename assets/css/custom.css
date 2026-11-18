@@ -449,3 +449,162 @@ ul.custom-list > li::before {
     75%  { transform: translate(20px, -15px) rotate(8deg); }
     100% { transform: translate(0, 0) rotate(0deg); }
 }
+
+
+.contact #kontaktu-forma {
+    height: auto;
+}
+
+.contact .php-email-form input[type=tel],
+.contact .php-email-form input[type=number] {
+    font-size: 14px;
+    padding: 10px 15px;
+    box-shadow: none;
+    border-radius: 0;
+    color: var(--default-color);
+    background-color: color-mix(in srgb, var(--background-color), transparent 50%);
+    border-color: color-mix(in srgb, var(--default-color), transparent 80%);
+}
+
+.contact .php-email-form input[type=tel]:focus,
+.contact .php-email-form input[type=number]:focus {
+    border-color: var(--accent-color);
+}
+
+.contact .php-email-form input[type=tel]::placeholder,
+.contact .php-email-form input[type=number]::placeholder {
+    color: color-mix(in srgb, var(--default-color), transparent 70%);
+}
+
+.vertinimo-blokas {
+    background: #faf9ff;
+    border: 1px solid #e3e0f5;
+    border-radius: 12px;
+    padding: 18px 22px;
+}
+
+.vertinimo-antraste {
+    margin: 0 0 6px;
+    font-weight: 600;
+    color: darkslateblue;
+}
+
+.vertinimo-eilute {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px dashed #e3e0f5;
+}
+
+.vertinimo-eilute:last-child {
+    border-bottom: 0;
+}
+
+.vertinimo-eilute label {
+    margin: 0;
+    padding-top: 10px;
+    font-size: 14px;
+}
+
+.vertinimo-laukas {
+    width: 140px;
+    flex-shrink: 0;
+}
+
+@media (max-width: 576px) {
+    .vertinimo-eilute {
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .vertinimo-laukas {
+        width: 100%;
+    }
+}
+
+.contact .php-email-form .form-control.is-invalid,
+.contact .php-email-form .form-control.is-invalid:focus {
+    border-color: #dc3545;
+    background-image: none;
+    padding-right: 15px;
+}
+
+.contact .php-email-form .form-control.is-invalid:focus {
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.15);
+}
+
+.contact .php-email-form .form-control.is-valid,
+.contact .php-email-form .form-control.is-valid:focus {
+    border-color: #198754;
+    background-image: none;
+    padding-right: 15px;
+}
+
+.contact .php-email-form .invalid-feedback {
+    font-size: 13px;
+    text-align: left;
+}
+
+.formos-mygtukai {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.contact .php-email-form button[type="submit"]:disabled,
+.contact .php-email-form button[type="submit"]:disabled:hover {
+    background: #b9b6c9;
+    box-shadow: none;
+    transform: none;
+    cursor: not-allowed;
+}
+
+.contact .php-email-form #isvalytiMygtukas {
+    background: transparent;
+    color: #444;
+    border: 2px solid #444;
+    padding: 8px 28px;
+    border-radius: 4px;
+    transition: 0.3s;
+}
+
+.contact .php-email-form #isvalytiMygtukas:hover {
+    color: blueviolet;
+    border-color: blueviolet;
+    transform: translateY(-2px);
+}
+
+.contact .php-email-form #isvalytiMygtukas:active {
+    transform: scale(0.95);
+}
+
+.formos-rezultatas {
+    margin-top: 30px;
+    background: #faf9ff;
+    border: 1px solid #e3e0f5;
+    border-left: 4px solid darkslateblue;
+    border-radius: 12px;
+    padding: 20px 25px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.formos-rezultatas h4 {
+    margin-bottom: 12px;
+    color: darkslateblue;
+}
+
+.formos-rezultatas p {
+    margin: 4px 0;
+}
+
+.formos-rezultatas .vidurkis {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed #c9c2ee;
+    font-size: 17px;
+    font-weight: 600;
+    color: darkslateblue;
+}
